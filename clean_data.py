@@ -1,13 +1,13 @@
+#%%
 import pandas as pd
 
-data = pd.read_csv('resources/votacoesVotos-2020.csv.gz', compression='gzip', sep=';')
-
+# Mandato inteiro
 start_date_filter = '01-02-2015'
 end_date_filter = '31-01-2019'
 
-start_year = 2014
-years = [x + start_year for x in range(0,6)]
-
+start_year = 2015
+years = [x + start_year for x in range(0, 6)]
+all_data = None
 
 for year in years:
     data = pd.read_csv('resources/votacoesVotos-' + str(year) + '.csv.gz', compression='gzip', sep=';')
@@ -16,7 +16,6 @@ for year in years:
     del data['deputado_urlFoto']
     del data['deputado_uri']
     del data['deputado_uriPartido']
-    del data['deputado_id']
     del data['deputado_idLegislatura']
 
     data = data[data['voto'] != 'Simbólico']
@@ -27,7 +26,20 @@ for year in years:
     data = data.loc[mask]
     data = data.sort_values(by=['dataHoraVoto'])
     
-    if year == 2014:
-        data.to_csv('all.csv')
+    if year == start_year:
+        all_data = data
     else:
-        data.to_csv('all.csv', mode='a', header=False)
+        all_data = pd.concat([all_data, data])
+
+#%% Take care of different names for same deputy
+for group, df_group in all_data.groupby('deputado_id'):
+    all_data['deputado_nome'].loc[all_data['deputado_id'] == group] = sorted(df_group['deputado_nome'].unique())[0]
+
+#%% 
+all_data['deputado_siglaPartido'].fillna('Sem Partido', inplace=True)
+
+#%%
+# all_data.groupby('idVotacao')['voto'].count()
+
+#%%
+all_data.to_csv('resources/votos_{}_to_{}.csv'.format(start_date_filter, end_date_filter), index=False)
