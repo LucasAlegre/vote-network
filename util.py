@@ -2,6 +2,13 @@ import matplotlib.pyplot as plt
 from igraph import plot, Graph
 
 
+def plot_weight_distribution(g: Graph):
+    plt.figure()
+    plt.hist(g.es['weight'], bins=256)
+    plt.xlabel("Weight")
+    plt.ylabel("#Edges")
+    plt.show()
+
 def plot_degree_distribution(g: Graph):
     plt.figure()
     plt.hist(g.degree(), bins=256)
