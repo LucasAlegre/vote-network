@@ -35,6 +35,9 @@ for year in years:
 for group, df_group in all_data.groupby('deputado_id'):
     all_data['deputado_nome'].loc[all_data['deputado_id'] == group] = sorted(df_group['deputado_nome'].unique())[0]
 
+#%% PMDB changed name to MDB
+all_data['deputado_siglaPartido'].replace('PMDB', 'MDB', inplace=True)
+
 #%% 
 all_data['deputado_siglaPartido'].fillna('Sem Partido', inplace=True)
 
