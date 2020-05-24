@@ -4,12 +4,12 @@ import numpy as np
 from igraph import Graph, plot, summary
 from itertools import combinations
 from collections import Counter
-from util import plot_big_graph, plot_weight_distribution, set_color_from_communities
+from util import plot_big_graph, plot_weight_distribution, set_color_from_communities, draw_vis
 import matplotlib.pyplot as plt
 
 
 #%% Read data
-df = pd.read_csv('resources/votos_31-01-2019_to_10-05-2020.csv')
+df = pd.read_csv('resources/votos_31-01-2019_to_30-12-2020.csv')
 
 # Remove votations with less than 10 votes
 #counts = df['idVotacao'].value_counts()
@@ -17,7 +17,6 @@ df = pd.read_csv('resources/votos_31-01-2019_to_10-05-2020.csv')
 
 num_votations = df['idVotacao'].nunique()
 print('Número de votações:', num_votations)
-
 
 #%% Deputados
 deputies = df['deputado_nome'].unique()
@@ -52,13 +51,14 @@ maxw = max(g.es['weight'])
 minw = min(g.es['weight'])
 g.es['weight'] = [(e-minw)/(maxw-minw) for e in g.es['weight']]
 
-#plot_weight_distribution(g)
-plot_big_graph(g)
+communities = g.community_multilevel(weights='weight')
+draw_vis(g, communities)
+#plot_big_graph(g)
 
 
 # Partidos
 
-parties = df['deputado_siglaPartido'].unique()
+""" parties = df['deputado_siglaPartido'].unique()
 dep_to_ind = {parties[i]: i for i in range(len(parties))}
 votations = df['idVotacao'].unique()
 votation_to_ind = {votations[i]: i for i in range(len(votations))}
@@ -79,7 +79,7 @@ edges = dict()
 for p1, p2 in combinations([i for i in range(len(parties))], 2):
     edges[(parties[p1], parties[p2])] = correlation(m, p1, p2)
 
-g = Graph.TupleList([(*pair, weight) for pair, weight in edges.items() if weight > 0.5], weights=True)
+g = Graph.TupleList([(*pair, weight) for pair, weight in edges.items() if weight > 0.0], weights=True)
 summary(g)
 # Normalize weights to [0,1]
 maxw = max(g.es['weight'])
@@ -87,5 +87,6 @@ minw = min(g.es['weight'])
 g.es['weight'] = [(e-minw)/(maxw-minw) for e in g.es['weight']]
 
 communities = g.community_multilevel(weights='weight')
-set_color_from_communities(g, communities)
-plot_big_graph(g, size=(1500,1000), vertex_size=50)
+#set_color_from_communities(g, communities)
+draw_vis(g, communities)
+#plot_big_graph(g, size=(1500,1000), vertex_size=50) """
