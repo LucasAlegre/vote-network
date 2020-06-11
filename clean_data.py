@@ -1,5 +1,6 @@
 #%%
 import pandas as pd
+import numpy as np
 
 # Mandato inteiro
 start_date_filter = '31-01-2019' # '01-02-2015'
@@ -35,11 +36,21 @@ for year in years:
 for group, df_group in all_data.groupby('deputado_id'):
     all_data['deputado_nome'].loc[all_data['deputado_id'] == group] = sorted(df_group['deputado_nome'].unique())[0]
 
-#%% PMDB changed name to MDB
+# Esse cara tá sem partido por algum motivo, mas no google ele é do solidariedade
+all_data['deputado_siglaPartido'].loc[all_data['deputado_nome'] == 'Simplício Araújo'] = 'SOLIDARIEDADE'
+
+#%% Partidos que mudaram de nome
 all_data['deputado_siglaPartido'].replace('PMDB', 'MDB', inplace=True)
+all_data['deputado_siglaPartido'].replace('PRB', 'REPUBLICANOS', inplace=True)
+all_data['deputado_siglaPartido'].replace('PR', 'PL', inplace=True)
+all_data['deputado_siglaPartido'].replace('PATRIOTA', 'PATRI', inplace=True)
+all_data['deputado_siglaPartido'].replace('PPS', 'CIDADANIA', inplace=True)
+all_data['deputado_siglaPartido'].replace('PPL', np.nan, inplace=True) # PPL for incorporado
+all_data['deputado_siglaPartido'].replace('PRP', np.nan, inplace=True) # PRP for incorporado
+all_data['deputado_siglaPartido'].replace('PHS', np.nan, inplace=True) # PHS for incorporado
 
 #%% 
-all_data['deputado_siglaPartido'].fillna('Sem Partido', inplace=True)
+#all_data['deputado_siglaPartido'].fillna('Sem Partido', inplace=True)
 
 #%%
 # all_data.groupby('idVotacao')['voto'].count()

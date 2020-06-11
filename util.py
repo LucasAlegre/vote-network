@@ -3,7 +3,7 @@ from igraph import plot, Graph, drawing
 from pyvis.network import Network
 
 
-def draw_vis(g: Graph, communities=None):
+def draw_vis(g: Graph, communities=None, parties=None):
     net = Network(width="100%", height="100%")#, bgcolor="#222222", font_color="white")
     net.barnes_hut()
 
@@ -11,7 +11,8 @@ def draw_vis(g: Graph, communities=None):
     if communities is not None:
         groups = communities.membership
         for i in g.vs.indices:
-            net.add_node(i, label=labels[i], group=groups[i], borderWidth=2, borderWidthSelected=4)
+            size = 60 if labels[i] in parties else 20
+            net.add_node(i, label=labels[i], group=groups[i], borderWidth=2, borderWidthSelected=4, size=size)
     else:
         for i in g.vs.indices:
             net.add_node(i, label=labels[i], borderWidth=2, borderWidthSelected=4)
