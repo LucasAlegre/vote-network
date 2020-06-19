@@ -1,7 +1,43 @@
 import matplotlib.pyplot as plt
+import numpy as np
 from igraph import plot, Graph, drawing
 from pyvis.network import Network
 
+
+def pearson_correlation(m):
+    arcs0 = m - m.mean(axis=1)[:, np.newaxis]
+    arcs1 = m.T - m.mean(axis=0)[:, np.newaxis]
+    M = arcs0.dot(arcs0.T)
+    m = np.sqrt(M.diagonal())
+    M = ((M / m).T / m).T
+    return M
+
+def generalized_similarity(m, min_eps=0.001, max_iter=100):
+    """ Balázs Kovács, "A generalized model of relational similarity," Social Networks, 32(3), July 2010, pp. 197–211
+        Copied and pasted from: https://github.com/dzinoviev/generalizedsimilarity
+    """
+    arcs0 = m - m.mean(axis=1)[:, np.newaxis]
+    arcs1 = m.T - m.mean(axis=0)[:, np.newaxis]
+
+    eps = min_eps + 1
+    N = np.eye(m.shape[1])
+
+    iters = 0
+    while eps > min_eps and iters < max_iter:
+        M = arcs0.dot(N).dot(arcs0.T)
+        m = np.sqrt(M.diagonal())
+        M = ((M / m).T / m).T
+        
+        Np = arcs1.dot(M).dot(arcs1.T)
+        n = np.sqrt(Np.diagonal())
+        Np = ((Np / n).T / n).T
+        Np = np.nan_to_num(Np)
+        eps = np.abs(Np - N).max()
+        N = Np
+
+        iters += 1
+    
+    return M
 
 def draw_vis(g: Graph, communities=None, parties=None):
     net = Network(width="100%", height="100%")#, bgcolor="#222222", font_color="white")
