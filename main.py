@@ -4,22 +4,27 @@ import ntpath
 import random
 import pandas as pd
 import numpy as np
-from igraph import Graph, plot, summary
+from igraph import Graph, plot, summary, read
 from itertools import combinations
 from collections import Counter
-from util import draw_vis, pearson_correlation, generalized_similarity
+from util import draw_vis, pearson_correlation, generalized_similarity, groups_by_party, filter_edges
 import matplotlib.pyplot as plt
+import leidenalg
 
 
 def main():
     parser = argparse.ArgumentParser(description="Community detection in voting networks")
-    parser.add_argument('-s', '--sample', type=int,
+    parser.add_argument('-s', "--sample", type=int,
                         action="store", dest="node_limit", default=None,
                         help="Sample a random subset of representatives of size up-to N")
     parser.add_argument('-c', '--correlation', type=float,
-                        action="store", dest="min_correlation", default=0.9995,
-                        help="Minimum correlation to establish an edge between nodes, (0, 1]")
-    parser.add_argument("-a", "--algorithm", choices=["leiden", "spinglass", "multilevel"],
+                        action="store", dest="min_correlation", default=None,
+                        help="Minimum correlation to establish an edge between nodes, [0, 1]")
+    parser.add_argument('-d', "--density", type=float, action="store", dest="density", default=0.2,
+                        help="Desired density to filter edges")
+    parser.add_argument('-m', '--measure', dest="measure", action="store", choices=["pearson", "generalized"],
+                        default="generalized", help="Similarity measure to create edges")
+    parser.add_argument("-a", "--algorithm", choices=["leiden", "spinglass", "multilevel", "party"],
                         action="store", dest="community_alg", default="leiden",
                         help="Choice of community detection algorithm")
     args = parser.parse_args()
@@ -27,6 +32,8 @@ def main():
     node_limit = args.node_limit
     detection = args.community_alg
     weight_threshold = args.min_correlation
+    density = args.density
+    measure = args.measure
 
     print("Sample limit: {}".format(node_limit))
     print("Community detection: {}".format(detection))
@@ -34,6 +41,7 @@ def main():
 
     # %% Read data
     path = 'resources/votos_31-01-2019_to_30-12-2020.csv'
+    #path = 'resources/votos_01-02-2015_to_31-01-2019.csv'
     df = pd.read_csv(path)
 
     basename = ntpath.basename(path)
@@ -65,7 +73,6 @@ def main():
     # df = df[~df['idVotacao'].isin(counts[counts < 10].index)]
 
     num_motions = df['idVotacao'].nunique()
-    print('Número de votações:', num_motions)
     print("Building graph for {} reps and {} voting motions.".format(num_reps, num_motions))
 
     rep_to_ind = {reps[i]: i for i in range(len(reps))}
@@ -75,7 +82,7 @@ def main():
 
     parties = [p for p in df['deputado_siglaPartido'].unique() if pd.notna(p)]
 
-    edges = dict()
+    edges = []
 
     vote_matrix = np.zeros((len(reps), len(motions)))
     df_grouped = df.groupby(['idVotacao', 'deputado_nome'])
@@ -88,11 +95,19 @@ def main():
         if voto == "Não":
             vote_matrix[i,j] = -1
 
-    M = generalized_similarity(vote_matrix) 
-    #M = pearson_correlation(vote_matrix)
+    if measure == 'generalized':
+        M = generalized_similarity(vote_matrix)
+    elif measure == 'pearson':
+        M = pearson_correlation(vote_matrix)
+    else:
+        raise NotImplementedError
 
-    for dep1, dep2 in combinations([i for i in range(len(reps))], 2):
-        edges[(reps[dep1], reps[dep2])] = M[dep1,dep2]
+    for dep1, dep2 in combinations(range(len(reps)), 2):
+        edges.append(((dep1,dep2), M[dep1,dep2]))
+
+    """     plt.figure()
+    plt.hist([e[1] for e in edges], bins=1000)
+    plt.show() """
 
     """ for group, df_group in df.groupby('deputado_nome'):
         partidos = {p for p in df_group['deputado_siglaPartido'].values if pd.notna(p)}
@@ -120,25 +135,37 @@ def main():
     for p1, p2 in combinations([i for i in range(len(parties))], 2):
         edges[(parties[p1], parties[p2])] = M[p1,p2] """
 
-    g = Graph.TupleList([(*pair, weight) for pair, weight in edges.items() if weight > weight_threshold], weights=True)
-    summary(g)
+    #g = Graph.TupleList([(*pair, weight) for pair, weight in edges.items() if weight > weight_threshold], weights=True)
+    g = Graph(graph_attrs={'name': 'Camera dos Deputados'})
+    edges, weights = filter_edges(edges, num_nodes=len(reps), threshold=weight_threshold, density=density)
+    g.add_vertices(reps)
+    g.add_edges(edges)
+    g.es['weight'] = weights
     # Normalize weights to [0,1]
     maxw = max(g.es['weight'])
     minw = min(g.es['weight'])
     g.es['weight'] = [(e - minw) / (maxw - minw) for e in g.es['weight']]
+    summary(g)
+    g.save('g.graphml')
 
     if detection == 'leiden':
-        communities = g.community_leiden(objective_function='modularity', weights='weight', n_iterations=100)
+        communities = leidenalg.find_partition(g, leidenalg.ModularityVertexPartition, weights='weight', n_iterations=100).membership
+        #communities = g.community_leiden(objective_function='modularity', weights='weight', n_iterations=100)
     elif detection == 'spinglass':
-        communities = g.community_spinglass(weights='weight', spins=3)
+        communities = g.community_spinglass(weights='weight').membership
     elif detection == 'multilevel':
-        communities = g.community_multilevel(weights='weight')
+        communities = g.community_multilevel(weights='weight').membership
+    elif detection == 'party':
+        communities = groups_by_party(df, reps, parties)
     else:
         raise NotImplementedError
     print("Modularity Score: ", g.modularity(communities, 'weight'))
 
-    draw_vis(g, communities, parties)
-
+    info = [parties[i] for i in groups_by_party(df, reps, parties)]
+    draw_vis(g, groups=communities, info=info, parties=parties)
 
 if __name__ == "__main__":
+    #g = read('g.graphml')
+    #print(g.density())
+    #draw_vis(g)
     main()

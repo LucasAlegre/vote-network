@@ -1,16 +1,21 @@
 #%%
 import pandas as pd
 import numpy as np
+import urllib.request
+import os
 
 # Mandato inteiro
-start_date_filter = '31-01-2019' # '01-02-2015'
-end_date_filter = '30-12-2020'
+start_date_filter = '31-01-2019' #'31-01-2019' # '01-02-2015'
+end_date_filter = '30-12-2020' #'30-12-2020'
 
 start_year = 2019
 years = [x + start_year for x in range(2)]
 all_data = None
 
 for year in years:
+    urllib.request.urlretrieve('https://dadosabertos.camara.leg.br/arquivos/votacoesVotos/csv/votacoesVotos-{}.csv'.format(year), 'resources/votacoesVotos-{}.csv'.format(year))
+    os.system('gzip resources/votacoesVotos-{}.csv'.format(year))
+
     data = pd.read_csv('resources/votacoesVotos-' + str(year) + '.csv.gz', compression='gzip', sep=';')
 
     del data['uriVotacao']

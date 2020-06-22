@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from igraph import plot, Graph, drawing
 from pyvis.network import Network
 
@@ -12,9 +13,9 @@ def pearson_correlation(m):
     M = ((M / m).T / m).T
     return M
 
-def generalized_similarity(m, min_eps=0.001, max_iter=100):
+def generalized_similarity(m, min_eps=0.001, max_iter=1000):
     """ Balázs Kovács, "A generalized model of relational similarity," Social Networks, 32(3), July 2010, pp. 197–211
-        Copied and pasted from: https://github.com/dzinoviev/generalizedsimilarity
+        Based on: https://github.com/dzinoviev/generalizedsimilarity
     """
     arcs0 = m - m.mean(axis=1)[:, np.newaxis]
     arcs1 = m.T - m.mean(axis=0)[:, np.newaxis]
@@ -23,15 +24,14 @@ def generalized_similarity(m, min_eps=0.001, max_iter=100):
     N = np.eye(m.shape[1])
 
     iters = 0
-    while eps > min_eps and iters < max_iter:
+    while (eps > min_eps and iters < max_iter) or np.isnan(N).any():
         M = arcs0.dot(N).dot(arcs0.T)
         m = np.sqrt(M.diagonal())
-        M = ((M / m).T / m).T
+        M = ((M / (m+1e-8)).T / (m+1e-8)).T
         
         Np = arcs1.dot(M).dot(arcs1.T)
         n = np.sqrt(Np.diagonal())
-        Np = ((Np / n).T / n).T
-        Np = np.nan_to_num(Np)
+        Np = ((Np / (n+1e-8)).T / (n+1e-8)).T
         eps = np.abs(Np - N).max()
         N = Np
 
@@ -39,19 +39,13 @@ def generalized_similarity(m, min_eps=0.001, max_iter=100):
     
     return M
 
-def draw_vis(g: Graph, communities=None, parties=None):
+def draw_vis(g: Graph, groups, info=None, parties=None):
     net = Network(width="100%", height="100%")#, bgcolor="#222222", font_color="white")
-    net.barnes_hut()
 
     labels = g.vs['name']
-    if communities is not None:
-        groups = communities.membership
-        for i in g.vs.indices:
-            size = 60 if labels[i] in parties else 20
-            net.add_node(i, label=labels[i], group=groups[i], borderWidth=2, borderWidthSelected=4, size=size)
-    else:
-        for i in g.vs.indices:
-            net.add_node(i, label=labels[i], borderWidth=2, borderWidthSelected=4)
+    for i in g.vs.indices:
+        size = 60 if labels[i] in parties else 20
+        net.add_node(i, label=labels[i], group=groups[i], title=info[i], borderWidth=2, borderWidthSelected=4, size=size)
         
     weights = g.es['weight']
     for i, e in enumerate(g.es):
@@ -72,9 +66,11 @@ def draw_vis(g: Graph, communities=None, parties=None):
                 },    
                 "scaling": {
                     "min": 0,
-                    "max": 10
+                    "max": 1
                 },
-                "smooth": false
+                "smooth": {
+                    "type": "continuous"
+                }
             },
             "interaction": {
                 "hover": true,
@@ -83,13 +79,35 @@ def draw_vis(g: Graph, communities=None, parties=None):
             "physics": {
                 "barnesHut": {
                     "gravitationalConstant": -80000,
-                    "springLength": 250,
-                    "springConstant": 0.001
-                },
-                "minVelocity": 0.75
+                    "springConstant": 0.001, 
+                    "springLength": 300
+                }
             }
     }""")
     net.show("mygraph.html")
+
+def filter_edges(edges_list, num_nodes, threshold=None, density=0.1):
+    edges, weights = [], []
+    if threshold is not None:
+        for e in range(len(edges_list)):
+            if e[1] >= threshold:
+                edges.append(e[0])
+                weights.append(e[1])
+    else:
+        count = int(num_nodes * (num_nodes - 1) * density / 2)
+        edges_list.sort(reverse=True, key=lambda e: e[1])
+        edges_list = edges_list[:count]
+        edges = [e[0] for e in edges_list]
+        weights = [e[1] for e in edges_list]
+    return edges, weights
+
+def groups_by_party(df, reps, parties):
+    rep_to_party = {}
+    parties = parties + ['Sem Partido']
+    for group, df_group in df.groupby('deputado_nome'):
+        ps = [p for p in df_group['deputado_siglaPartido'] if pd.notna(p)]
+        rep_to_party[group] = ps[0] if len(ps) > 0 else 'Sem Partido'
+    return [parties.index(rep_to_party[rep]) for rep in reps]
 
 def set_color_from_communities(g: Graph, communities):
     pal = drawing.colors.ClusterColoringPalette(len(communities))
