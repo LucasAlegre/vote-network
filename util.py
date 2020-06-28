@@ -91,6 +91,58 @@ def draw_vis(g: Graph, communities=None, parties=None):
     }""")
     net.show("mygraph.html")
 
+def draw_vis_2(g: Graph, communities=None, temas=None):
+    net = Network(width="100%", height="100%")#, bgcolor="#222222", font_color="white")
+    net.barnes_hut()
+
+    labels = g.vs['name']
+    if communities is not None:
+        groups = communities.membership
+        for i in g.vs.indices:
+            size = 60 if labels[i] in temas else 20
+            net.add_node(i, label=labels[i], group=groups[i], borderWidth=2, borderWidthSelected=4, size=size)
+    else:
+        for i in g.vs.indices:
+            net.add_node(i, label=labels[i], borderWidth=2, borderWidthSelected=4)
+        
+    weights = g.es['weight']
+    for i, e in enumerate(g.es):
+        pair = e.tuple
+        net.add_edge(pair[0], pair[1], value=weights[i])
+
+    #net.show_buttons()
+    net.set_options("""
+        var options = {
+              "nodes": {
+                "font": {
+                    "size": 30
+                }
+            },
+            "edges": {
+                "color": {
+                    "inherit": true
+                },    
+                "scaling": {
+                    "min": 0,
+                    "max": 10
+                },
+                "smooth": false
+            },
+            "interaction": {
+                "hover": true,
+                "navigationButtons": true
+            },
+            "physics": {
+                "barnesHut": {
+                    "gravitationalConstant": -80000,
+                    "springLength": 250,
+                    "springConstant": 0.001
+                },
+                "minVelocity": 0.75
+            }
+    }""")
+    net.show("mygraph.html")
+
 def set_color_from_communities(g: Graph, communities):
     pal = drawing.colors.ClusterColoringPalette(len(communities))
     g.vs['color'] = pal.get_many(communities.membership)
