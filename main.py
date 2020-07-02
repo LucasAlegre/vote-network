@@ -20,7 +20,7 @@ def main():
     parser.add_argument('-c', '--correlation', type=float,
                         action="store", dest="min_correlation", default=None,
                         help="Minimum correlation to establish an edge between nodes, [0, 1]")
-    parser.add_argument('-d', "--density", type=float, action="store", dest="density", default=0.2,
+    parser.add_argument('-d', "--density", type=float, action="store", dest="density", default=0.3,
                         help="Desired density to filter edges")
     parser.add_argument('-m', '--measure', dest="measure", action="store", choices=["pearson", "generalized"],
                         default="generalized", help="Similarity measure to create edges")
@@ -76,12 +76,9 @@ def main():
     print("Building graph for {} reps and {} voting motions.".format(num_reps, num_motions))
 
     rep_to_ind = {reps[i]: i for i in range(len(reps))}
-
     motions = df['idVotacao'].unique()
     motion_to_ind = {motions[i]: i for i in range(len(motions))}
-
     parties = [p for p in df['deputado_siglaPartido'].unique() if pd.notna(p)]
-
     edges = []
 
     vote_matrix = np.zeros((len(reps), len(motions)))
@@ -103,7 +100,8 @@ def main():
         raise NotImplementedError
 
     for dep1, dep2 in combinations(range(len(reps)), 2):
-        edges.append(((dep1,dep2), M[dep1,dep2]))
+        if M[dep1,dep2] > 0:
+            edges.append(((dep1,dep2), M[dep1,dep2]))
 
     """     plt.figure()
     plt.hist([e[1] for e in edges], bins=1000)
@@ -114,7 +112,7 @@ def main():
         for p in partidos:
             edges[(group, p)] = 1.0
     """
-    # Partidos
+    # Parties
     """ party_to_ind = {parties[i]: i for i in range(len(parties))}
     votations = df['idVotacao'].unique()
     votation_to_ind = {votations[i]: i for i in range(len(votations))}
@@ -130,15 +128,20 @@ def main():
             yes_perc = - (1 - yes_perc)
         vote_matrix[i,j] = yes_perc
 
-    M = generalized_similarity(vote_matrix)
-    #M = pearson_correlation(vote_matrix)
+    if measure == 'generalized':
+        M = generalized_similarity(vote_matrix)
+    elif measure == 'pearson':
+        M = pearson_correlation(vote_matrix)
+    else:
+        raise NotImplementedError
     for p1, p2 in combinations([i for i in range(len(parties))], 2):
-        edges[(parties[p1], parties[p2])] = M[p1,p2] """
+        if M[p1,p2] > 0:
+            edges.append(((p1, p2), M[p1,p2])) """
 
     #g = Graph.TupleList([(*pair, weight) for pair, weight in edges.items() if weight > weight_threshold], weights=True)
-    g = Graph(graph_attrs={'name': 'Camera dos Deputados'})
-    edges, weights = filter_edges(edges, num_nodes=len(reps), threshold=weight_threshold, density=density)
+    g = Graph(graph_attrs={'name': 'Camera dos Deputados'}, directed=False)
     g.add_vertices(reps)
+    edges, weights = filter_edges(edges, num_nodes=g.vcount(), threshold=weight_threshold, density=density)
     g.add_edges(edges)
     g.es['weight'] = weights
     # Normalize weights to [0,1]

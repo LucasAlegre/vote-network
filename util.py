@@ -80,7 +80,7 @@ def draw_vis(g: Graph, groups, info=None, parties=None):
                 "barnesHut": {
                     "gravitationalConstant": -80000,
                     "springConstant": 0.001, 
-                    "springLength": 300
+                    "springLength": 500
                 }
             }
     }""")
