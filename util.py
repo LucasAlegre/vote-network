@@ -191,6 +191,7 @@ def collect_metrics(g: Graph, parameters):
 
     global_metrics(g, file)
     local_metrics(g, file)
+    plot_weight_distribution(g, ts)
     plot_degree_distribution(g, ts)
 
     file.close()
