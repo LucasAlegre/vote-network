@@ -1,0 +1,25 @@
+Experiment Parameters
+Node limit: None
+Detection alg: leiden
+Weight Threshold: None
+Density: 0.3
+Measure: 0.3
+
+GLOBAL MEASUURES
+Connected: False
+Density: 0.3
+Diameter: 9
+Clustering Coefficient: 0.8206824545166005
+Average Local Clustering Coefficient: 0.837597590829452
+Average Degree: 161.99999999999997
+Max Degree: 269
+Average Betweenness: 126.2365988909427
+Max Betweenness: 1185.0
+Average Closeness: 0.005756454219491885
+Max Closeness: 0.006978908188585608
+
+LOCAL MEASURES
+Vertex with highest degree: ['Adolfo Viana']
+Vertex with highest betweenness: ['Jefferson Campos']
+Vertex with highest closeness: ['Adolfo Viana']
+Vertex with highest clustering coefficient: Elmar Nascimento

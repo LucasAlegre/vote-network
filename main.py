@@ -7,7 +7,7 @@ import numpy as np
 from igraph import Graph, plot, summary, read
 from itertools import combinations
 from collections import Counter
-from util import draw_vis, pearson_correlation, generalized_similarity, groups_by_party, filter_edges
+from util import draw_vis, pearson_correlation, generalized_similarity, groups_by_party, filter_edges, collect_metrics
 import matplotlib.pyplot as plt
 import leidenalg
 
@@ -27,6 +27,8 @@ def main():
     parser.add_argument("-a", "--algorithm", choices=["leiden", "spinglass", "multilevel", "party"],
                         action="store", dest="community_alg", default="leiden",
                         help="Choice of community detection algorithm")
+    parser.add_argument("-p", "--plot", choices=["Y", "N"], dest="plot_network", action="store", default="Y", 
+                        help="Plot the network's graph (Y/N)")
     args = parser.parse_args()
 
     node_limit = args.node_limit
@@ -34,6 +36,9 @@ def main():
     weight_threshold = args.min_correlation
     density = args.density
     measure = args.measure
+    plot_network = args.plot_network.upper()
+
+    experiment_parameters = (node_limit, detection, weight_threshold, density, measure)
 
     print("Sample limit: {}".format(node_limit))
     print("Community detection: {}".format(detection))
@@ -165,7 +170,15 @@ def main():
     print("Modularity Score: ", g.modularity(communities, 'weight'))
 
     info = [parties[i] for i in groups_by_party(df, reps, parties)]
-    draw_vis(g, groups=communities, info=info, parties=parties)
+    
+
+    if (plot_network == "Y"):
+        draw_vis(g, groups=communities, info=info, parties=parties)
+    else:
+        print("skipping plot")
+
+    collect_metrics(g, experiment_parameters)
+
 
 if __name__ == "__main__":
     #g = read('g.graphml')
