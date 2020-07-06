@@ -1,11 +1,22 @@
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import pandas as pd
 from igraph import plot, Graph, drawing, summary, mean
 from pyvis.network import Network
-import calendar;
-import time;
-
+from datetime import datetime
+import time
+sns.set(style='darkgrid', rc={'figure.figsize': (7.2, 4.45),
+                            'text.usetex': True,
+                            'xtick.labelsize': 16,
+                            'ytick.labelsize': 16,
+                            'font.size': 15,
+                            'figure.autolayout': True,
+                            'axes.titlesize' : 16,
+                            'axes.labelsize' : 17,
+                            'lines.linewidth' : 2,
+                            'lines.markersize' : 6,
+                            'legend.fontsize': 15})
 
 def pearson_correlation(m):
     arcs0 = m - m.mean(axis=1)[:, np.newaxis]
@@ -86,12 +97,12 @@ def draw_vis(g: Graph, groups, info=None, parties=None):
                 }
             }
     }""")
-    net.show("mygraph.html")
+    net.show("camaradosdeputados.html")
 
 def filter_edges(edges_list, num_nodes, threshold=None, density=0.1):
     edges, weights = [], []
     if threshold is not None:
-        for e in range(len(edges_list)):
+        for e in edges_list:
             if e[1] >= threshold:
                 edges.append(e[0])
                 weights.append(e[1])
@@ -115,19 +126,21 @@ def set_color_from_communities(g: Graph, communities):
     pal = drawing.colors.ClusterColoringPalette(len(communities))
     g.vs['color'] = pal.get_many(communities.membership)
 
-def plot_weight_distribution(g: Graph, timestamp):
+def plot_distribution(data, filename=None, xlabel='', ylabel='', kde=False):
     plt.figure()
-    plt.hist(g.es['weight'])
-    plt.xlabel("Weight")
-    plt.ylabel("#Edges")
-    plt.savefig('results/plots/weight_distribution_{0}.png'.format(str(timestamp)))
+    sns.distplot(data, kde=kde, color='blue')
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    if filename is not None:
+        plt.savefig(f'results/plots/{filename}.pdf')
 
-def plot_degree_distribution(g: Graph, timestamp):
+def plot_similarity_distribution(similarities, weight_threshold):
     plt.figure()
-    plt.hist(g.degree())
-    plt.xlabel("Degree")
-    plt.ylabel("#Vertices")
-    plt.savefig('results/plots/degree_distribution_{0}.png'.format(str(timestamp)))
+    sns.distplot(similarities, kde=False, color='blue')
+    plt.axvline(x=weight_threshold, linestyle='--', color='red')
+    plt.ylabel("Number of edges")
+    plt.xlabel("Generalized similarity")
+    plt.show()
 
 def plot_big_graph(g: Graph, size=(3000,2000), vertex_size=20):
     visual_style = {}
@@ -142,32 +155,29 @@ def plot_big_graph(g: Graph, size=(3000,2000), vertex_size=20):
     return plot(g, **visual_style)
 
 
-def global_metrics(g: Graph, file):
-
-
+def metrics(g: Graph, file):
     summary(g)
+
+    degrees = g.degree()
+    betweenness = g.betweenness()
+    closeness = g.closeness()
+
     file.write("\nGLOBAL MEASUURES\n")
     file.write("Connected: " + str(g.is_connected()) + "\n")
     file.write("Density: " + str(g.density()) + "\n")
     file.write("Diameter: " + str(g.diameter()) + "\n")
     file.write("Clustering Coefficient: " + str(g.transitivity_undirected()) + "\n")
     file.write("Average Local Clustering Coefficient: " + str(g.transitivity_avglocal_undirected()) + "\n")
-    file.write("Average Degree: " + str(mean(g.degree())) + "\n")
+    file.write("Average Degree: " + str(mean(degrees)) + "\n")
     file.write("Max Degree: " + str(g.maxdegree()) + "\n")
     file.write("Average Betweenness: " + str(mean(g.betweenness())) + "\n")
-    file.write("Max Betweenness: " + str(max(g.betweenness())) + "\n")
-    file.write("Average Closeness: " + str(mean(g.closeness())) + "\n")
-    file.write("Max Closeness: " + str(max(g.closeness())) + "\n")
+    file.write("Max Betweenness: " + str(max(betweenness)) + "\n")
+    file.write("Average Closeness: " + str(mean(closeness)) + "\n")
+    file.write("Max Closeness: " + str(max(closeness)) + "\n")
 
-def local_metrics(g: Graph, file):
-
-    if "name" not in g.vertex_attributes():
-        g.vs["name"] = [str(i) for i in range(g.vcount())]
-    degrees = g.degree()
-    betweenness = g.betweenness()
-    closeness = g.closeness()
     if not g.is_directed():
         clustering_coef = g.transitivity_local_undirected()
+
     file.write("\nLOCAL MEASURES\n")
     file.write("Vertex with highest degree: " + str(g.vs.select(_degree = g.maxdegree())['name']) + "\n")
     file.write("Vertex with highest betweenness: " + str(g.vs.select(_betweenness = max(betweenness))['name']) + "\n")
@@ -179,19 +189,16 @@ def local_metrics(g: Graph, file):
 def collect_metrics(g: Graph, parameters):
 
     node_limit, detection, weight_threshold, density, measure = parameters
-    ts = calendar.timegm(time.gmtime())
-    file  = open("results/metrics_" + str(ts), "w") 
+    ts = str(datetime.now())
+    file = open("results/metrics_" + str(ts), "w") 
 
     file.write("Experiment Parameters\n")
     file.write("Node limit: " + str(node_limit) + "\n")
     file.write("Detection alg: " + str(detection) + "\n")
     file.write("Weight Threshold: " + str(weight_threshold) + "\n")
     file.write("Density: " + str(density) + "\n")
-    file.write("Measure: " + str(density) + "\n")
+    file.write("Measure: " + str(measure) + "\n")
 
-    global_metrics(g, file)
-    local_metrics(g, file)
-    plot_weight_distribution(g, ts)
-    plot_degree_distribution(g, ts)
+    metrics(g, file)
 
     file.close()

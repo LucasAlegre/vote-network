@@ -7,8 +7,9 @@ import numpy as np
 from igraph import Graph, plot, summary, read
 from itertools import combinations
 from collections import Counter
-from util import draw_vis, pearson_correlation, generalized_similarity, groups_by_party, filter_edges, collect_metrics
+from util import *
 import matplotlib.pyplot as plt
+import seaborn as sns
 import leidenalg
 
 
@@ -108,9 +109,8 @@ def main():
         if M[dep1,dep2] > 0:
             edges.append(((dep1,dep2), M[dep1,dep2]))
 
-    """     plt.figure()
-    plt.hist([e[1] for e in edges], bins=1000)
-    plt.show() """
+    #similarities = [e[1] for e in edges if e[1] > 0.9]
+    #plot_similarity_distribution(similarities, weight_threshold)
 
     """ for group, df_group in df.groupby('deputado_nome'):
         partidos = {p for p in df_group['deputado_siglaPartido'].values if pd.notna(p)}
@@ -171,17 +171,14 @@ def main():
 
     info = [parties[i] for i in groups_by_party(df, reps, parties)]
     
-
     if (plot_network == "Y"):
         draw_vis(g, groups=communities, info=info, parties=parties)
-    else:
-        print("skipping plot")
 
     collect_metrics(g, experiment_parameters)
 
 
 if __name__ == "__main__":
     #g = read('g.graphml')
-    #print(g.density())
+    #plot_distribution(g.betweenness(), filename='betweenness', xlabel='Betweenness', ylabel='Number of edges')
     #draw_vis(g)
     main()

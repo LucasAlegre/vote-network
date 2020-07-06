@@ -14,7 +14,7 @@ all_data = None
 
 for year in years:
     urllib.request.urlretrieve('https://dadosabertos.camara.leg.br/arquivos/votacoesVotos/csv/votacoesVotos-{}.csv'.format(year), 'resources/votacoesVotos-{}.csv'.format(year))
-    os.system('gzip resources/votacoesVotos-{}.csv'.format(year))
+    os.system('gzip -f resources/votacoesVotos-{}.csv'.format(year))
 
     data = pd.read_csv('resources/votacoesVotos-' + str(year) + '.csv.gz', compression='gzip', sep=';')
 
