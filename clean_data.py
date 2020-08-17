@@ -3,13 +3,30 @@ import pandas as pd
 import numpy as np
 import urllib.request
 import os
+import argparse
+
+YEAR = 2
+
+parser = argparse.ArgumentParser(description="Gets data from the API")
+parser.add_argument('-s', "--start", type=str,
+                action="store", dest="start_date", default="31-01-2019",
+                help="DD-MM-YYYY  Start data for the period that you want to collect the data.")
+parser.add_argument('-e', "--end", type=str,
+                action="store", dest="end_date", default="30-12-2020",
+                help="DD-MM-YYYY  End data for the period that you want to collect the data.")
+
+args = parser.parse_args()
+
+start_date, end_date = args.start_date, args.end_date
+
 
 # Mandato inteiro
-start_date_filter = '31-01-2019' #'31-01-2019' # '01-02-2015'
-end_date_filter = '30-12-2020' #'30-12-2020'
+start_date_filter: str = start_date#'31-01-2019' # '01-02-2015'
+end_date_filter: str = end_date #'30-12-2020'
 
-start_year = 2019
-years = [x + start_year for x in range(2)]
+start_year = int(start_date_filter.split('-')[YEAR])
+end_year = int(end_date_filter.split('-')[YEAR])
+years = [x + start_year for x in range(end_year - start_year + 1)]
 all_data = None
 
 for year in years:
