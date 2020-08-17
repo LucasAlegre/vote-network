@@ -5,7 +5,89 @@ import urllib.request
 import os
 import argparse
 
+import pickle
+
+
 YEAR = 2
+
+def save_motion_themes(content: dict):
+    with open('resources/motions_themes.json', 'w') as pfile:
+        pfile.write(content.__str__())
+
+def get_motions_propositions(years):
+    
+    all_data = None
+    for year in years:
+        
+        '''
+        Nestes arquivos, separados por ano de realização das votações, são listados os identificadores básicos de cada votação e de cada Proposição afetada por ela. 
+        É normal uma votação gerar efeitos em mais de uma proposição. 
+        Quando existente, é fornecido um campo com um texto descritivo do efeito gerado pela votação sobre a proposição.
+        ''' 
+        url = "http://dadosabertos.camara.leg.br/arquivos/votacoesProposicoes/{0}/votacoesProposicoes-{1}.{0}".format("csv", str(year))
+        file = 'resources/votacoesProposicoes-{}.csv'.format(year)
+        
+        if not os.path.isfile(file + ".gz"):
+            urllib.request.urlretrieve(url, file)
+            os.system("gzip -f {}".format(file))
+
+        data = pd.read_csv(file + '.gz', compression='gzip', sep=';')
+        if year == years[0]:
+            all_data = data
+        else:
+            all_data = pd.concat([all_data, data])
+        
+    return all_data.rename(columns={"proposicao_uri": "uriProposicao"})
+
+def get_themes(props: pd.DataFrame):
+
+    props = props[props["proposicao_ano"].notnull()]
+
+    years = props["proposicao_ano"].unique()
+    new = []
+    for element in years:
+        new.append(int(element))
+    
+
+    years = new
+
+    years = sorted(years)
+    for year in years:
+        url = "http://dadosabertos.camara.leg.br/arquivos/proposicoesTemas/{0}/proposicoesTemas-{1}.{0}".format("csv", year)
+
+        all_data = None
+
+        file = 'resources/proposicoesTemas-{}.csv'.format(year)
+        if not os.path.isfile(file + ".gz"):
+            urllib.request.urlretrieve(url, file)
+            os.system('gzip -f {}'.format(file))
+        data = pd.read_csv(file + '.gz', compression='gzip', sep=';')
+
+        
+
+
+        if year == years[0]:
+            all_data = data
+        else:
+            all_data = pd.concat([all_data, data])
+        
+    return all_data
+
+
+def get_motions_data(year):
+
+    file = 'resources/votacoesVotos-{}.csv'.format(year)
+
+    if not os.path.isfile(file + ".gz"):
+        urllib.request.urlretrieve('https://dadosabertos.camara.leg.br/arquivos/votacoesVotos/csv/votacoesVotos-{}.csv'.format(year), 'resources/votacoesVotos-{}.csv'.format(year))
+        os.system('gzip -f {}'.format(file))
+    return pd.read_csv('{}.gz'.format(file), compression='gzip', sep=';')
+
+
+
+
+def merge_motion_theme(motion_prop: pd.DataFrame, prop_theme: pd.DataFrame) -> pd.DataFrame:
+    return pd.merge(motion_prop, prop_theme, on="uriProposicao", how="inner")   
 
 parser = argparse.ArgumentParser(description="Gets data from the API")
 parser.add_argument('-s', "--start", type=str,
@@ -29,11 +111,29 @@ end_year = int(end_date_filter.split('-')[YEAR])
 years = [x + start_year for x in range(end_year - start_year + 1)]
 all_data = None
 
-for year in years:
-    urllib.request.urlretrieve('https://dadosabertos.camara.leg.br/arquivos/votacoesVotos/csv/votacoesVotos-{}.csv'.format(year), 'resources/votacoesVotos-{}.csv'.format(year))
-    os.system('gzip -f resources/votacoesVotos-{}.csv'.format(year))
 
-    data = pd.read_csv('resources/votacoesVotos-' + str(year) + '.csv.gz', compression='gzip', sep=';')
+motions_propositions = get_motions_propositions(years)
+prop_themes = get_themes(motions_propositions)
+
+motions_propositions.to_csv('resources/motions_propositions_{}_to_{}.csv'.format(start_date_filter, end_date_filter), index=False)
+prop_themes.to_csv('resources/prop_themes_{}_to_{}.csv'.format(start_date_filter, end_date_filter), index=False)
+
+motions_themes = merge_motion_theme(motions_propositions, prop_themes)[["idVotacao", "tema"]]
+
+
+motion_to_themes = {}
+
+for motionId, grouped in motions_themes.groupby(["idVotacao"]):
+    motion_to_themes[motionId] = grouped["tema"].unique()
+
+print(type(motion_to_themes))
+
+save_motion_themes(motion_to_themes)
+
+for year in years:
+
+    data = get_motions_data(year)
+
 
     del data['uriVotacao']
     del data['deputado_urlFoto']
@@ -70,6 +170,9 @@ all_data['deputado_siglaPartido'].replace('PPS', 'CIDADANIA', inplace=True)
 all_data['deputado_siglaPartido'].replace('PPL', np.nan, inplace=True) # PPL for incorporado
 all_data['deputado_siglaPartido'].replace('PRP', np.nan, inplace=True) # PRP for incorporado
 all_data['deputado_siglaPartido'].replace('PHS', np.nan, inplace=True) # PHS for incorporado
+
+
+all_data["theme"] = all_data["idVotacao"].map(motion_to_themes)
 
 #%% 
 #all_data['deputado_siglaPartido'].fillna('Sem Partido', inplace=True)
