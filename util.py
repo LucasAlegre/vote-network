@@ -202,3 +202,10 @@ def collect_metrics(g: Graph, parameters):
     metrics(g, file)
 
     file.close()
+
+
+def get_votations_theme(theme: str, start: str, end: str) -> list:
+
+    with open("resources/votacoes_{}_{}_to_{}.txt".format(theme, start, end), 'r') as file:
+        return [v.replace("\n","") for v in file.readlines()]
+    return []

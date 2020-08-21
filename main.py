@@ -30,6 +30,17 @@ def main():
                         help="Choice of community detection algorithm")
     parser.add_argument("-p", "--plot", choices=["Y", "N"], dest="plot_network", action="store", default="Y", 
                         help="Plot the network's graph (Y/N)")
+
+    parser.add_argument('-b', "--begin", type=str,
+                        action="store", dest="start_date", default="2020-01-01",
+                        help="YYYY-MM-DD  Start data for the period that you want to collect the data.")
+    parser.add_argument('-e', "--end", type=str,
+                        action="store", dest="end_date", default=None,
+                        help="YYYY-MM-DD  End data for the period that you want to collect the data.")
+    parser.add_argument('-t', "--theme", type=str,
+                        action="store", dest="proposition_themes", default=None,
+                        help="Desired theme for the proposition collect (saude/educacao/economia). Default: None")
+
     args = parser.parse_args()
 
     node_limit = args.node_limit
@@ -38,6 +49,8 @@ def main():
     density = args.density
     measure = args.measure
     plot_network = args.plot_network.upper()
+
+    start_date, end_date, theme = args.start_date, args.end_date, args.proposition_themes
 
     experiment_parameters = (node_limit, detection, weight_threshold, density, measure)
 
@@ -53,6 +66,17 @@ def main():
     basename = ntpath.basename(path)
     print(basename)
     random.seed(0)
+
+
+    if theme is not None:
+        
+        print("Filtering votations by theme: " + theme)
+        subject_votations = get_votations_theme(theme, start_date, end_date)
+        print(subject_votations)
+       
+        mask = df['idVotacao'].apply(lambda x: x in subject_votations)
+        df = df[mask]
+
 
     all_reps = df['deputado_nome'].unique()
     total_reps = len(all_reps)
@@ -72,6 +96,9 @@ def main():
         print("Using data from all {} representatives.".format(total_reps))
         reps = all_reps
 
+
+
+
     print(df.head(n=5))
 
     # Remove motions with less than 10 votes
@@ -79,6 +106,7 @@ def main():
     # df = df[~df['idVotacao'].isin(counts[counts < 10].index)]
 
     num_motions = df['idVotacao'].nunique()
+
     print("Building graph for {} reps and {} voting motions.".format(num_reps, num_motions))
 
     rep_to_ind = {reps[i]: i for i in range(len(reps))}

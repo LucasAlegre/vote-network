@@ -1,0 +1,25 @@
+Experiment Parameters
+Node limit: 100
+Detection alg: leiden
+Weight Threshold: None
+Density: 0.3
+Measure: generalized
+
+GLOBAL MEASUURES
+Connected: False
+Density: 0.3
+Diameter: 6
+Clustering Coefficient: 0.8262736944347483
+Average Local Clustering Coefficient: 0.8265287673057209
+Average Degree: 29.699999999999996
+Max Degree: 56
+Average Betweenness: 12.65
+Max Betweenness: 60.0
+Average Closeness: 0.024773761758726708
+Max Closeness: 0.031122288588494185
+
+LOCAL MEASURES
+Vertex with highest degree: ['Dr. Zacharias Calil', 'Ossesio Silva', 'Roman', 'Toninho Wandscheer']
+Vertex with highest betweenness: ['Renildo Calheiros']
+Vertex with highest closeness: ['Dr. Zacharias Calil', 'Ossesio Silva', 'Roman', 'Toninho Wandscheer']
+Vertex with highest clustering coefficient: Alex Manente

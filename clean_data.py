@@ -51,7 +51,6 @@ def get_themes(props: pd.DataFrame):
 
     years = new
 
-    years = sorted(years)
     for year in years:
         url = "http://dadosabertos.camara.leg.br/arquivos/proposicoesTemas/{0}/proposicoesTemas-{1}.{0}".format("csv", year)
 
@@ -96,10 +95,14 @@ parser.add_argument('-s', "--start", type=str,
 parser.add_argument('-e', "--end", type=str,
                 action="store", dest="end_date", default="30-12-2020",
                 help="DD-MM-YYYY  End data for the period that you want to collect the data.")
+parser.add_argument('-t', "--theme", type=bool,
+                action="store", dest="only_with_themes", default=False,
+                help="Determines if will only get data from votes that are related to propositions that have themes")
+
 
 args = parser.parse_args()
 
-start_date, end_date = args.start_date, args.end_date
+start_date, end_date, only_with_themes = args.start_date, args.end_date, args.only_with_themes
 
 
 # Mandato inteiro
@@ -112,23 +115,22 @@ years = [x + start_year for x in range(end_year - start_year + 1)]
 all_data = None
 
 
-motions_propositions = get_motions_propositions(years)
-prop_themes = get_themes(motions_propositions)
+# motions_propositions = get_motions_propositions(years)
+# prop_themes = get_themes(motions_propositions)
 
-motions_propositions.to_csv('resources/motions_propositions_{}_to_{}.csv'.format(start_date_filter, end_date_filter), index=False)
-prop_themes.to_csv('resources/prop_themes_{}_to_{}.csv'.format(start_date_filter, end_date_filter), index=False)
+# motions_propositions.to_csv('resources/motions_propositions_{}_to_{}.csv'.format(start_date_filter, end_date_filter), index=False)
+# prop_themes.to_csv('resources/prop_themes_{}_to_{}.csv'.format(start_date_filter, end_date_filter), index=False)
 
-motions_themes = merge_motion_theme(motions_propositions, prop_themes)[["idVotacao", "tema"]]
+# motions_themes = merge_motion_theme(motions_propositions, prop_themes)[["idVotacao", "tema"]]
 
 
-motion_to_themes = {}
+# motion_to_themes = {}
 
-for motionId, grouped in motions_themes.groupby(["idVotacao"]):
-    motion_to_themes[motionId] = grouped["tema"].unique()
+# for motionId, grouped in motions_themes.groupby(["idVotacao"]):
+#    motion_to_themes[motionId] = grouped["tema"].unique()
 
-print(type(motion_to_themes))
 
-save_motion_themes(motion_to_themes)
+# save_motion_themes(motion_to_themes)
 
 for year in years:
 
@@ -172,7 +174,7 @@ all_data['deputado_siglaPartido'].replace('PRP', np.nan, inplace=True) # PRP for
 all_data['deputado_siglaPartido'].replace('PHS', np.nan, inplace=True) # PHS for incorporado
 
 
-all_data["theme"] = all_data["idVotacao"].map(motion_to_themes)
+# all_data = pd.merge(all_data, motions_themes, on="idVotacao", how="inner") 
 
 #%% 
 #all_data['deputado_siglaPartido'].fillna('Sem Partido', inplace=True)
@@ -181,4 +183,6 @@ all_data["theme"] = all_data["idVotacao"].map(motion_to_themes)
 # all_data.groupby('idVotacao')['voto'].count()
 
 #%%
+
+
 all_data.to_csv('resources/votos_{}_to_{}.csv'.format(start_date_filter, end_date_filter), index=False)

@@ -1,0 +1,25 @@
+Experiment Parameters
+Node limit: None
+Detection alg: leiden
+Weight Threshold: 0.4
+Density: 0.3
+Measure: generalized
+
+GLOBAL MEASUURES
+Connected: True
+Density: 0.6243581844321215
+Diameter: 4
+Clustering Coefficient: 0.9987717681209389
+Average Local Clustering Coefficient: 0.9979518596113442
+Average Degree: 337.1534195933455
+Max Degree: 407
+Average Betweenness: 298.03696857670997
+Max Betweenness: 54131.0
+Average Closeness: 0.5109374489108405
+Max Closeness: 0.6733167082294265
+
+LOCAL MEASURES
+Vertex with highest degree: ['Alex Santana']
+Vertex with highest betweenness: ['Felipe Carreras']
+Vertex with highest closeness: ['Alex Santana']
+Vertex with highest clustering coefficient: Zeca Dirceu
