@@ -49,6 +49,11 @@ def filter_by_name_and_quantity(df, node_limit):
 
     return df, reps
 
+def save_modularity(modularity, theme, start_date, end_date):
+    with open("results/modularity.csv", "a") as file:
+        file.write("{},{},{},{}\n".format(theme, start_date, end_date, modularity))
+
+    
 def get_params():
     parser = argparse.ArgumentParser(description="Community detection in voting networks")
     parser.add_argument('-s', "--sample", type=int,
@@ -164,7 +169,10 @@ def main():
         communities = groups_by_party(df, reps, parties)
     else:
         raise NotImplementedError
-    print("Modularity Score: ", g.modularity(communities, 'weight'))
+        
+    modularity = g.modularity(communities, 'weight')
+    print("Modularity Score: ", modularity)
+    save_modularity(modularity, theme, start_date, end_date)
 
     info = [parties[i] for i in groups_by_party(df, reps, parties)]
     
