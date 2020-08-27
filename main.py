@@ -13,7 +13,43 @@ import seaborn as sns
 import leidenalg
 
 
-def main():
+def filter_by_theme(df, theme, start_date, end_date):
+    print("Filtering votations by theme: " + theme)
+    subject_votations = get_votations_theme(theme, start_date, end_date)
+    print(subject_votations)
+    
+    mask = df['idVotacao'].apply(lambda x: x in subject_votations)
+    return df[mask]
+
+def filter_by_name_and_quantity(df, node_limit):
+
+    all_reps = df['deputado_nome'].unique()
+    total_reps = len(all_reps)
+    num_reps = total_reps
+
+    if node_limit is not None:
+        print("Randomly sampling at most {} representatives".format(node_limit))
+        sample_size = min(total_reps, node_limit)
+        num_reps = sample_size
+        reps = random.sample(list(all_reps), sample_size)
+
+        # Mask to select only those reps that were sampled
+        mask = df['deputado_nome'].apply(lambda x: x in reps)
+        # Filter out rows for non-sampled reps
+        df = df[mask]
+    else:
+        print("Using data from all {} representatives.".format(total_reps))
+        reps = all_reps
+
+    print(df.head(n=5))
+
+    num_motions = df['idVotacao'].nunique()
+
+    print("Building graph for {} reps and {} voting motions.".format(num_reps, num_motions))
+
+    return df, reps
+
+def get_params():
     parser = argparse.ArgumentParser(description="Community detection in voting networks")
     parser.add_argument('-s', "--sample", type=int,
                         action="store", dest="node_limit", default=None,
@@ -49,10 +85,17 @@ def main():
     density = args.density
     measure = args.measure
     plot_network = args.plot_network.upper()
+    start_date = args.start_date
+    end_date = args.end_date
+    theme = args.proposition_themes
 
-    start_date, end_date, theme = args.start_date, args.end_date, args.proposition_themes
 
-    experiment_parameters = (node_limit, detection, weight_threshold, density, measure)
+    return node_limit, detection, weight_threshold, density, measure, start_date, end_date, theme, plot_network
+
+def main():
+    
+    node_limit, detection, weight_threshold, density, measure, start_date, end_date, theme, plot_network = get_params()
+    experiment_parameters = (get_params())
 
     print("Sample limit: {}".format(node_limit))
     print("Community detection: {}".format(detection))
@@ -60,7 +103,6 @@ def main():
 
     # %% Read data
     path = 'resources/votos_31-01-2019_to_30-12-2020.csv'
-    #path = 'resources/votos_01-02-2015_to_31-01-2019.csv'
     df = pd.read_csv(path)
 
     basename = ntpath.basename(path)
@@ -68,46 +110,8 @@ def main():
     random.seed(0)
 
 
-    if theme is not None:
-        
-        print("Filtering votations by theme: " + theme)
-        subject_votations = get_votations_theme(theme, start_date, end_date)
-        print(subject_votations)
-       
-        mask = df['idVotacao'].apply(lambda x: x in subject_votations)
-        df = df[mask]
-
-
-    all_reps = df['deputado_nome'].unique()
-    total_reps = len(all_reps)
-    num_reps = total_reps
-
-    if node_limit is not None:
-        print("Randomly sampling at most {} representatives".format(node_limit))
-        sample_size = min(total_reps, node_limit)
-        num_reps = sample_size
-        reps = random.sample(list(all_reps), sample_size)
-
-        # Mask to select only those reps that were sampled
-        mask = df['deputado_nome'].apply(lambda x: x in reps)
-        # Filter out rows for non-sampled reps
-        df = df[mask]
-    else:
-        print("Using data from all {} representatives.".format(total_reps))
-        reps = all_reps
-
-
-
-
-    print(df.head(n=5))
-
-    # Remove motions with less than 10 votes
-    # counts = df['idVotacao'].value_counts()
-    # df = df[~df['idVotacao'].isin(counts[counts < 10].index)]
-
-    num_motions = df['idVotacao'].nunique()
-
-    print("Building graph for {} reps and {} voting motions.".format(num_reps, num_motions))
+    df = filter_by_theme(df, theme, start_date, end_date)
+    df, reps = filter_by_name_and_quantity(df, node_limit)
 
     rep_to_ind = {reps[i]: i for i in range(len(reps))}
     motions = df['idVotacao'].unique()
@@ -137,41 +141,6 @@ def main():
         if M[dep1,dep2] > 0:
             edges.append(((dep1,dep2), M[dep1,dep2]))
 
-    #similarities = [e[1] for e in edges if e[1] > 0.9]
-    #plot_similarity_distribution(similarities, weight_threshold)
-
-    """ for group, df_group in df.groupby('deputado_nome'):
-        partidos = {p for p in df_group['deputado_siglaPartido'].values if pd.notna(p)}
-        for p in partidos:
-            edges[(group, p)] = 1.0
-    """
-    # Parties
-    """ party_to_ind = {parties[i]: i for i in range(len(parties))}
-    votations = df['idVotacao'].unique()
-    votation_to_ind = {votations[i]: i for i in range(len(votations))}
-
-    vote_matrix = np.zeros((len(parties), len(votations)))
-    df_grouped = df.groupby(['idVotacao', 'deputado_siglaPartido'])
-    for group, df_group in df_grouped:
-        n = len(df_group)
-        i = party_to_ind[group[1]]
-        j = votation_to_ind[group[0]]
-        yes_perc = len(df_group[df_group['voto'] == "Sim"])/n
-        if yes_perc < 0.5:
-            yes_perc = - (1 - yes_perc)
-        vote_matrix[i,j] = yes_perc
-
-    if measure == 'generalized':
-        M = generalized_similarity(vote_matrix)
-    elif measure == 'pearson':
-        M = pearson_correlation(vote_matrix)
-    else:
-        raise NotImplementedError
-    for p1, p2 in combinations([i for i in range(len(parties))], 2):
-        if M[p1,p2] > 0:
-            edges.append(((p1, p2), M[p1,p2])) """
-
-    #g = Graph.TupleList([(*pair, weight) for pair, weight in edges.items() if weight > weight_threshold], weights=True)
     g = Graph(graph_attrs={'name': 'Camera dos Deputados'}, directed=False)
     g.add_vertices(reps)
     edges, weights = filter_edges(edges, num_nodes=g.vcount(), threshold=weight_threshold, density=density)
@@ -199,8 +168,10 @@ def main():
 
     info = [parties[i] for i in groups_by_party(df, reps, parties)]
     
+    period = start_date + '_to_' + end_date
+
     if (plot_network == "Y"):
-        draw_vis(g, groups=communities, info=info, parties=parties)
+        draw_vis(g, groups=communities, info=info, parties=parties, theme=theme, period=period)
 
     collect_metrics(g, experiment_parameters)
 
