@@ -1,0 +1,25 @@
+Experiment Parameters
+Node limit: None
+Detection alg: leiden
+Weight Threshold: None
+Density: 0.3
+Measure: generalized
+
+GLOBAL MEASUURES
+Connected: False
+Density: 0.2999971786878077
+Diameter: 8
+Clustering Coefficient: 0.8774291546629018
+Average Local Clustering Coefficient: 0.8656434060618262
+Average Degree: 159.59849906191386
+Max Degree: 266
+Average Betweenness: 119.93996247654773
+Max Betweenness: 1553.193580093212
+Average Closeness: 0.005225330757767077
+Max Closeness: 0.006397075622572538
+
+LOCAL MEASURES
+Vertex with highest degree: ['Coronel Chrisóstomo', 'Helio Lopes']
+Vertex with highest betweenness: ['Celso Maldaner']
+Vertex with highest closeness: ['Dr. Frederico']
+Vertex with highest clustering coefficient: Luiz Carlos

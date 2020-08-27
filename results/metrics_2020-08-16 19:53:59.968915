@@ -1,0 +1,25 @@
+Experiment Parameters
+Node limit: 100
+Detection alg: leiden
+Weight Threshold: 0.4
+Density: 0.3
+Measure: generalized
+
+GLOBAL MEASUURES
+Connected: False
+Density: 0.6315151515151516
+Diameter: 1
+Clustering Coefficient: 1.0
+Average Local Clustering Coefficient: 1.0
+Average Degree: 62.52
+Max Degree: 75
+Average Betweenness: 0.0
+Max Betweenness: 0.0
+Average Closeness: 0.033516883116883125
+Max Closeness: 0.04
+
+LOCAL MEASURES
+Vertex with highest degree: ['Vavá Martins', 'Luis Tibé', 'Dr. Leonardo', 'Ricardo Pericar', 'Edna Henrique', 'Roberto de Lucena', 'José Priante', 'Alex Manente', 'Marcelo Brum', 'Kim Kataguiri', 'Mariana Carvalho', 'Dr. Zacharias Calil', 'Ossesio Silva', 'Maurício Dziedricki', 'Jaqueline Cassol', 'Aguinaldo Ribeiro', 'Tiago Mitraud', 'Wladimir Garotinho', 'Vanderlei Macris', 'André Ferreira', 'Cristiano Vale', 'Luiz Lauro Filho', 'Heitor Freire', 'Diego Garcia', 'Flaviano Melo', 'Schiavinato', 'Altineu Côrtes', 'Fábio Faria', 'Eduardo Cury', 'Guilherme Mussi', 'José Medeiros', 'Herculano Passos', 'Carla Dickson', 'Daniela do Waguinho', 'Renata Abreu', 'Rose Modesto', 'Rogério Peninha Mendonça', 'Carlos Chiodini', 'Tito', 'José Nelto', 'Soraya Santos', 'Célio Silveira', 'Euclydes Pettersen', 'Silvio Costa Filho', 'Átila Lira', 'Fabiano Tolentino', 'Walter Alves', 'Pedro Paulo', 'Roman', 'Expedito Netto', 'Hercílio Coelho Diniz', 'Guilherme Derrite', 'Daniel Trzeciak', 'Cacá Leão', 'Dr. João', 'Stefano Aguiar', 'Emanuel Pinheiro Neto', 'Paulo Bengtson', 'Toninho Wandscheer', 'Otoni de Paula', 'Arthur Lira', 'Bosco Costa', 'Edilázio Júnior', 'Fausto Pinato', 'Fábio Mitidieri', 'Vinicius Farah', 'Geovania de Sá', 'Afonso Hamm', 'Vitor Lippi', 'Otto Alencar Filho', 'Paulo Freire Costa', 'Fabio Reis', 'Professor Alcides', 'Norma Ayub', 'Carlos Sampaio', 'Samuel Moreira']
+Vertex with highest betweenness: ['Vavá Martins', 'Luis Tibé', 'Dr. Leonardo', "Chico D'Angelo", 'Ricardo Pericar', 'Edna Henrique', 'Roberto de Lucena', 'José Priante', 'Alex Manente', 'Marcelo Brum', 'Idilvan Alencar', 'Merlong Solano', 'Kim Kataguiri', 'Lídice da Mata', 'André Figueiredo', 'Mariana Carvalho', 'Dr. Zacharias Calil', 'Camilo Capiberibe', 'Ossesio Silva', 'Maurício Dziedricki', 'Jaqueline Cassol', 'Waldenor Pereira', 'Aguinaldo Ribeiro', 'Tiago Mitraud', 'Wladimir Garotinho', 'Vanderlei Macris', 'André Ferreira', 'Cristiano Vale', 'Luiz Lauro Filho', 'Heitor Freire', 'Diego Garcia', 'Tabata Amaral', 'Flaviano Melo', 'Schiavinato', 'Altineu Côrtes', 'Fábio Faria', 'Eduardo Cury', 'Guilherme Mussi', 'Glauber Braga', 'José Medeiros', 'Herculano Passos', 'Carla Dickson', 'Leônidas Cristino', 'Daniela do Waguinho', 'Renata Abreu', 'Rose Modesto', 'Rogério Peninha Mendonça', 'Carlos Chiodini', 'Zeca Dirceu', 'Tito', 'José Nelto', 'Nelson Pellegrino', 'Soraya Santos', 'Célio Silveira', 'Afonso Motta', 'Euclydes Pettersen', 'Robério Monteiro', 'Aliel Machado', 'Silvio Costa Filho', 'Átila Lira', 'Fabiano Tolentino', 'Walter Alves', 'Professora Marcivania', 'Pedro Paulo', 'Alexandre Padilha', 'Roman', 'Expedito Netto', 'Hercílio Coelho Diniz', 'Guilherme Derrite', 'Daniel Trzeciak', 'Cacá Leão', 'Dr. João', 'Flávia Morais', 'Stefano Aguiar', 'Emanuel Pinheiro Neto', 'Paulo Bengtson', 'Toninho Wandscheer', 'Otoni de Paula', 'Tadeu Alencar', 'Arthur Lira', 'Bosco Costa', 'Edilázio Júnior', 'Fausto Pinato', 'Fábio Mitidieri', 'Vinicius Farah', 'Geovania de Sá', 'Afonso Hamm', 'Vitor Lippi', 'Otto Alencar Filho', 'Paulo Freire Costa', 'Fabio Reis', 'Denis Bezerra', 'Professor Alcides', 'Luizianne Lins', 'Norma Ayub', 'Renildo Calheiros', 'Carlos Sampaio', 'Samuel Moreira', 'Vander Loubet', 'Célio Studart']
+Vertex with highest closeness: ['Vavá Martins', 'Luis Tibé', 'Dr. Leonardo', 'Ricardo Pericar', 'Edna Henrique', 'Roberto de Lucena', 'José Priante', 'Alex Manente', 'Marcelo Brum', 'Kim Kataguiri', 'Mariana Carvalho', 'Dr. Zacharias Calil', 'Ossesio Silva', 'Maurício Dziedricki', 'Jaqueline Cassol', 'Aguinaldo Ribeiro', 'Tiago Mitraud', 'Wladimir Garotinho', 'Vanderlei Macris', 'André Ferreira', 'Cristiano Vale', 'Luiz Lauro Filho', 'Heitor Freire', 'Diego Garcia', 'Flaviano Melo', 'Schiavinato', 'Altineu Côrtes', 'Fábio Faria', 'Eduardo Cury', 'Guilherme Mussi', 'José Medeiros', 'Herculano Passos', 'Carla Dickson', 'Daniela do Waguinho', 'Renata Abreu', 'Rose Modesto', 'Rogério Peninha Mendonça', 'Carlos Chiodini', 'Tito', 'José Nelto', 'Soraya Santos', 'Célio Silveira', 'Euclydes Pettersen', 'Silvio Costa Filho', 'Átila Lira', 'Fabiano Tolentino', 'Walter Alves', 'Pedro Paulo', 'Roman', 'Expedito Netto', 'Hercílio Coelho Diniz', 'Guilherme Derrite', 'Daniel Trzeciak', 'Cacá Leão', 'Dr. João', 'Stefano Aguiar', 'Emanuel Pinheiro Neto', 'Paulo Bengtson', 'Toninho Wandscheer', 'Otoni de Paula', 'Arthur Lira', 'Bosco Costa', 'Edilázio Júnior', 'Fausto Pinato', 'Fábio Mitidieri', 'Vinicius Farah', 'Geovania de Sá', 'Afonso Hamm', 'Vitor Lippi', 'Otto Alencar Filho', 'Paulo Freire Costa', 'Fabio Reis', 'Professor Alcides', 'Norma Ayub', 'Carlos Sampaio', 'Samuel Moreira']
+Vertex with highest clustering coefficient: Vavá Martins

@@ -52,7 +52,7 @@ def generalized_similarity(m, min_eps=0.001, max_iter=1000):
     
     return M
 
-def draw_vis(g: Graph, groups, info=None, parties=None):
+def draw_vis(g: Graph, groups, info=None, parties=None, theme=None, period=None):
     net = Network(width="100%", height="100%")#, bgcolor="#222222", font_color="white")
 
     labels = g.vs['name']
@@ -97,7 +97,10 @@ def draw_vis(g: Graph, groups, info=None, parties=None):
                 }
             }
     }""")
-    net.show("camaradosdeputados.html")
+    if (theme is not None):
+        net.show("graphs/camaradosdeputados_{}_{}.html".format(theme, period))
+    else:
+        net.show("camaradosdeputados.html")
 
 def filter_edges(edges_list, num_nodes, threshold=None, density=0.1):
     edges, weights = [], []
@@ -188,7 +191,8 @@ def metrics(g: Graph, file):
 
 def collect_metrics(g: Graph, parameters):
 
-    node_limit, detection, weight_threshold, density, measure = parameters
+    node_limit, detection, weight_threshold, density, measure, start_date, end_date, theme, plot_network = parameters
+
     ts = str(datetime.now())
     file = open("results/metrics_" + str(ts), "w") 
 
@@ -202,3 +206,10 @@ def collect_metrics(g: Graph, parameters):
     metrics(g, file)
 
     file.close()
+
+
+def get_votations_theme(theme: str, start: str, end: str) -> list:
+
+    with open("resources/votacoes_{}_{}_to_{}.txt".format(theme, start, end), 'r') as file:
+        return [v.replace("\n","") for v in file.readlines()]
+    return []

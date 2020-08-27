@@ -1,0 +1,25 @@
+Experiment Parameters
+Node limit: None
+Detection alg: leiden
+Weight Threshold: None
+Density: 0.3
+Measure: generalized
+
+GLOBAL MEASUURES
+Connected: False
+Density: 0.29999637877964874
+Diameter: 8
+Clustering Coefficient: 0.9037825997804108
+Average Local Clustering Coefficient: 0.8725367339453786
+Average Degree: 157.49809885931575
+Max Degree: 268
+Average Betweenness: 134.4258555133079
+Max Betweenness: 1437.034168539624
+Average Closeness: 0.005373080733577709
+Max Closeness: 0.006563320415051882
+
+LOCAL MEASURES
+Vertex with highest degree: ['Bibo Nunes', 'Baleia Rossi', 'Dr. Luiz Antonio Teixeira Jr.', 'José Rocha', 'Zé Vitor', 'Neri Geller', 'Margarete Coelho']
+Vertex with highest betweenness: ['Daniel Trzeciak']
+Vertex with highest closeness: ['Filipe Barros', 'Márcio Biolchi']
+Vertex with highest clustering coefficient: Capitão Wagner
