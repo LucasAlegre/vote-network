@@ -48,7 +48,6 @@ def get_themes(props: pd.DataFrame):
     for element in years:
         new.append(int(element))
     
-
     years = new
 
     for year in years:
@@ -62,16 +61,12 @@ def get_themes(props: pd.DataFrame):
             os.system('gzip -f {}'.format(file))
         data = pd.read_csv(file + '.gz', compression='gzip', sep=';')
 
-        
-
-
         if year == years[0]:
             all_data = data
         else:
             all_data = pd.concat([all_data, data])
         
     return all_data
-
 
 def get_motions_data(year):
 
@@ -82,11 +77,9 @@ def get_motions_data(year):
         os.system('gzip -f {}'.format(file))
     return pd.read_csv('{}.gz'.format(file), compression='gzip', sep=';')
 
-
-
-
 def merge_motion_theme(motion_prop: pd.DataFrame, prop_theme: pd.DataFrame) -> pd.DataFrame:
     return pd.merge(motion_prop, prop_theme, on="uriProposicao", how="inner")   
+
 
 parser = argparse.ArgumentParser(description="Gets data from the API")
 parser.add_argument('-s', "--start", type=str,
@@ -99,11 +92,8 @@ parser.add_argument('-t', "--theme", type=bool,
                 action="store", dest="only_with_themes", default=False,
                 help="Determines if will only get data from votes that are related to propositions that have themes")
 
-
 args = parser.parse_args()
-
 start_date, end_date, only_with_themes = args.start_date, args.end_date, args.only_with_themes
-
 
 # Mandato inteiro
 start_date_filter: str = start_date#'31-01-2019' # '01-02-2015'
@@ -114,7 +104,6 @@ end_year = int(end_date_filter.split('-')[YEAR])
 years = [x + start_year for x in range(end_year - start_year + 1)]
 all_data = None
 
-
 # motions_propositions = get_motions_propositions(years)
 # prop_themes = get_themes(motions_propositions)
 
@@ -123,19 +112,16 @@ all_data = None
 
 # motions_themes = merge_motion_theme(motions_propositions, prop_themes)[["idVotacao", "tema"]]
 
-
 # motion_to_themes = {}
 
 # for motionId, grouped in motions_themes.groupby(["idVotacao"]):
 #    motion_to_themes[motionId] = grouped["tema"].unique()
-
 
 # save_motion_themes(motion_to_themes)
 
 for year in years:
 
     data = get_motions_data(year)
-
 
     del data['uriVotacao']
     del data['deputado_urlFoto']
@@ -160,9 +146,6 @@ for year in years:
 for group, df_group in all_data.groupby('deputado_id'):
     all_data['deputado_nome'].loc[all_data['deputado_id'] == group] = sorted(df_group['deputado_nome'].unique())[0]
 
-# Esse cara tá sem partido por algum motivo, mas no google ele é do solidariedade
-all_data['deputado_siglaPartido'].loc[all_data['deputado_nome'] == 'Simplício Araújo'] = 'SOLIDARIEDADE'
-
 #%% Partidos que mudaram de nome
 all_data['deputado_siglaPartido'].replace('PMDB', 'MDB', inplace=True)
 all_data['deputado_siglaPartido'].replace('PRB', 'REPUBLICANOS', inplace=True)
@@ -175,14 +158,7 @@ all_data['deputado_siglaPartido'].replace('PHS', np.nan, inplace=True) # PHS for
 
 
 # all_data = pd.merge(all_data, motions_themes, on="idVotacao", how="inner") 
-
-#%% 
-#all_data['deputado_siglaPartido'].fillna('Sem Partido', inplace=True)
-
-#%%
+# all_data['deputado_siglaPartido'].fillna('Sem Partido', inplace=True)
 # all_data.groupby('idVotacao')['voto'].count()
-
-#%%
-
 
 all_data.to_csv('resources/votos_{}_to_{}.csv'.format(start_date_filter, end_date_filter), index=False)

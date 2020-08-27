@@ -59,7 +59,7 @@ def get_params():
     parser.add_argument('-s', "--sample", type=int,
                         action="store", dest="node_limit", default=None,
                         help="Sample a random subset of representatives of size up-to N")
-    parser.add_argument('-c', '--correlation', type=float,
+    parser.add_argument('-c', '--correlation', type=float,  #0.9998
                         action="store", dest="min_correlation", default=None,
                         help="Minimum correlation to establish an edge between nodes, [0, 1]")
     parser.add_argument('-d', "--density", type=float, action="store", dest="density", default=0.3,
@@ -69,19 +69,18 @@ def get_params():
     parser.add_argument("-a", "--algorithm", choices=["leiden", "spinglass", "multilevel", "party"],
                         action="store", dest="community_alg", default="leiden",
                         help="Choice of community detection algorithm")
-    parser.add_argument("-p", "--plot", choices=["Y", "N"], dest="plot_network", action="store", default="Y", 
+    parser.add_argument("-p", "--plot", dest="plot_network", action="store_true", default=False, 
                         help="Plot the network's graph (Y/N)")
 
     parser.add_argument('-b', "--begin", type=str,
-                        action="store", dest="start_date", default="2020-01-01",
+                        action="store", dest="start_date", default="2019-01-31",
                         help="YYYY-MM-DD  Start data for the period that you want to collect the data.")
     parser.add_argument('-e', "--end", type=str,
-                        action="store", dest="end_date", default=None,
+                        action="store", dest="end_date", default="2020-12-30",
                         help="YYYY-MM-DD  End data for the period that you want to collect the data.")
     parser.add_argument('-t', "--theme", type=str,
                         action="store", dest="proposition_themes", default=None,
                         help="Desired theme for the proposition collect (saude/educacao/economia). Default: None")
-
     args = parser.parse_args()
 
     node_limit = args.node_limit
@@ -89,11 +88,10 @@ def get_params():
     weight_threshold = args.min_correlation
     density = args.density
     measure = args.measure
-    plot_network = args.plot_network.upper()
+    plot_network = args.plot_network
     start_date = args.start_date
     end_date = args.end_date
     theme = args.proposition_themes
-
 
     return node_limit, detection, weight_threshold, density, measure, start_date, end_date, theme, plot_network
 
@@ -114,8 +112,8 @@ def main():
     print(basename)
     random.seed(0)
 
-
-    df = filter_by_theme(df, theme, start_date, end_date)
+    if theme is not None:
+        df = filter_by_theme(df, theme, start_date, end_date)
     df, reps = filter_by_name_and_quantity(df, node_limit)
 
     rep_to_ind = {reps[i]: i for i in range(len(reps))}
@@ -145,6 +143,8 @@ def main():
     for dep1, dep2 in combinations(range(len(reps)), 2):
         if M[dep1,dep2] > 0:
             edges.append(((dep1,dep2), M[dep1,dep2]))
+    
+    plot_similarity_distribution([e[1] for e in edges if e[1] > 0.99], weight_threshold)
 
     g = Graph(graph_attrs={'name': 'Camera dos Deputados'}, directed=False)
     g.add_vertices(reps)
@@ -156,7 +156,7 @@ def main():
     minw = min(g.es['weight'])
     g.es['weight'] = [(e - minw) / (maxw - minw) for e in g.es['weight']]
     summary(g)
-    g.save('g.graphml')
+    g.save('graphs/g.graphml')
 
     if detection == 'leiden':
         communities = leidenalg.find_partition(g, leidenalg.ModularityVertexPartition, weights='weight', n_iterations=100).membership
@@ -178,7 +178,7 @@ def main():
     
     period = start_date + '_to_' + end_date
 
-    if (plot_network == "Y"):
+    if plot_network:
         draw_vis(g, groups=communities, info=info, parties=parties, theme=theme, period=period)
 
     collect_metrics(g, experiment_parameters)

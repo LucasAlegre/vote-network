@@ -100,7 +100,7 @@ def draw_vis(g: Graph, groups, info=None, parties=None, theme=None, period=None)
     if (theme is not None):
         net.show("graphs/camaradosdeputados_{}_{}.html".format(theme, period))
     else:
-        net.show("camaradosdeputados.html")
+        net.show("graphs/camaradosdeputados_{}.html".format(period))
 
 def filter_edges(edges_list, num_nodes, threshold=None, density=0.1):
     edges, weights = [], []
@@ -190,7 +190,6 @@ def metrics(g: Graph, file):
 
 
 def collect_metrics(g: Graph, parameters):
-
     node_limit, detection, weight_threshold, density, measure, start_date, end_date, theme, plot_network = parameters
 
     ts = str(datetime.now())
@@ -209,7 +208,5 @@ def collect_metrics(g: Graph, parameters):
 
 
 def get_votations_theme(theme: str, start: str, end: str) -> list:
-
     with open("resources/votacoes_{}_{}_to_{}.txt".format(theme, start, end), 'r') as file:
         return [v.replace("\n","") for v in file.readlines()]
-    return []
