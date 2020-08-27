@@ -124,7 +124,7 @@ for year in years:
     data = get_motions_data(year)
 
     del data['uriVotacao']
-    del data['deputado_urlFoto']
+    #del data['deputado_urlFoto']
     del data['deputado_uri']
     del data['deputado_uriPartido']
     del data['deputado_idLegislatura']

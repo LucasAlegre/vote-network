@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from pyvis.physics import Physics
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -52,21 +53,31 @@ def generalized_similarity(m, min_eps=0.001, max_iter=1000):
     
     return M
 
-def draw_vis(g: Graph, groups, info=None, parties=None, theme=None, period=None):
-    net = Network(width="100%", height="100%")#, bgcolor="#222222", font_color="white")
+def get_deputy_html(dep, party, df):
+    img = df[df['deputado_nome'] == dep]['deputado_urlFoto'].values[0]
+    html = """ <html>
+    <body>
+    <h2>Partido: {}</h2>
+    <img src="{}" width="100" height="150">
+    </body>
+    </html> """.format(party, img)
+    return html
+
+def draw_vis(g: Graph, groups, info=None, parties=None, theme=None, period=None, df=None):
+    net = Network(width="100%", height="100%", heading="Câmara dos Deputados")#, bgcolor="#222222", font_color="white")
 
     labels = g.vs['name']
     for i in g.vs.indices:
         size = 60 if labels[i] in parties else 20
-        net.add_node(i, label=labels[i], group=groups[i], title=info[i], borderWidth=2, borderWidthSelected=4, size=size)
-        
+        net.add_node(i, label=labels[i], group=groups[i], title=get_deputy_html(labels[i], info[i], df), borderWidth=2, borderWidthSelected=4, size=size)
+
     weights = g.es['weight']
     for i, e in enumerate(g.es):
         pair = e.tuple
         net.add_edge(pair[0], pair[1], value=weights[i])
 
     #net.show_buttons()
-    net.set_options("""
+    options = """
         var options = {
               "nodes": {
                 "font": {
@@ -96,11 +107,14 @@ def draw_vis(g: Graph, groups, info=None, parties=None, theme=None, period=None)
                     "springLength": 500
                 }
             }
-    }""")
-    if (theme is not None):
-        net.show("graphs/camaradosdeputados_{}_{}.html".format(theme, period))
+    }"""
+    net.set_options(options)
+
+    if theme is not None:
+        filename = "graphs/camaradosdeputados_{}_{}.html".format(theme, period)
     else:
-        net.show("graphs/camaradosdeputados_{}.html".format(period))
+        filename = "graphs/camaradosdeputados_{}.html".format(period)
+    net.show(filename)
 
 def filter_edges(edges_list, num_nodes, threshold=None, density=0.1):
     edges, weights = [], []

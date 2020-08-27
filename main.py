@@ -144,7 +144,7 @@ def main():
         if M[dep1,dep2] > 0:
             edges.append(((dep1,dep2), M[dep1,dep2]))
     
-    plot_similarity_distribution([e[1] for e in edges if e[1] > 0.99], weight_threshold)
+    #plot_similarity_distribution([e[1] for e in edges if e[1] > 0.99], weight_threshold)
 
     g = Graph(graph_attrs={'name': 'Camera dos Deputados'}, directed=False)
     g.add_vertices(reps)
@@ -179,7 +179,7 @@ def main():
     period = start_date + '_to_' + end_date
 
     if plot_network:
-        draw_vis(g, groups=communities, info=info, parties=parties, theme=theme, period=period)
+        draw_vis(g, groups=communities, info=info, parties=parties, theme=theme, period=period, df=df)
 
     collect_metrics(g, experiment_parameters)
 
