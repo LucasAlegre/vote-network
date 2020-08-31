@@ -7,6 +7,10 @@ from igraph import plot, Graph, drawing, summary, mean
 from pyvis.network import Network
 from datetime import datetime
 import time
+import plotly.graph_objects as go
+
+
+
 sns.set(style='darkgrid', rc={'figure.figsize': (7.2, 4.45),
                             'text.usetex': True,
                             'xtick.labelsize': 16,
@@ -159,6 +163,56 @@ def plot_similarity_distribution(similarities, weight_threshold):
     plt.xlabel("Generalized similarity")
     plt.show()
 
+def plot_modularity():
+    df = pd.read_csv('results/modularity.csv')
+    df_2019 = df[df["inicio"] == "2019-01-01"]
+    df_2020 = df[df["inicio"] == "2020-01-01"]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x = df_2019['tema'], 
+        y = df_2019['valor'],
+        name='modularity 2019',
+        marker_color='indianred',
+        text=df_2019['valor'].round(2).tolist(),
+        textposition='auto'
+    ))
+
+    fig.add_trace(go.Bar(
+        x = df_2020['tema'], 
+        y = df_2020['valor'],
+        name='modularity 2020',
+        marker_color='lightsalmon',
+        text=df_2020['valor'].round(2).tolist(),
+        textposition='auto'
+    ))
+
+    fig.update_layout(barmode='group', xaxis_tickangle=-45)
+
+
+    fig.update_layout(title='Modularity',
+                    plot_bgcolor='rgb(230, 230,230)',
+                    showlegend=True)
+
+    fig.show()
+    fig.write_image("results/modularity.png", engine="kaleido")
+
+    # import pandas as pd
+
+    # import plotly.graph_objects
+
+    # path = "results/modularity.csv"
+    # df = pd.read_csv(path)
+
+    # fig = go.Figure(go.Scatter(x = df["tema"], y = df["valor"],
+    #                     name="modularity"))
+
+    # fig.update_layout(title="Modularity per theme",
+    #                     plot_bgcolor="rgb(230, 230, 230)",
+    #                     showlegend=True)
+    # fig.show()
+
 def plot_big_graph(g: Graph, size=(3000,2000), vertex_size=20):
     visual_style = {}
     visual_style["bbox"] = size
@@ -224,3 +278,6 @@ def collect_metrics(g: Graph, parameters):
 def get_votations_theme(theme: str, start: str, end: str) -> list:
     with open("resources/votacoes_{}_{}_to_{}.txt".format(theme, start, end), 'r') as file:
         return [v.replace("\n","") for v in file.readlines()]
+
+def get_votations_theme_period_sample(theme, year):
+    return np.load("resources/samples/{}_{}_sample.npy".format(theme, year)).tolist()
