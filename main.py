@@ -15,7 +15,11 @@ import leidenalg
 
 def filter_by_theme(df, theme, start_date, end_date):
     print("Filtering votations by theme: " + theme)
-    subject_votations = get_votations_theme(theme, start_date, end_date)
+    # subject_votations = get_votations_theme(theme, start_date, end_date)
+    if "2019" in start_date:
+        subject_votations = get_votations_theme_period_sample(theme, "2019")
+    elif "2020" in start_date:
+        subject_votations = get_votations_theme_period_sample(theme, "2020")
     print(subject_votations)
     subject_votations = set(subject_votations)
     
