@@ -19,6 +19,7 @@ sns.set(style='darkgrid', rc={'figure.figsize': (7.2, 4.45),
                             'lines.markersize' : 6,
                             'legend.fontsize': 15})
 
+
 def pearson_correlation(m):
     arcs0 = m - m.mean(axis=1)[:, np.newaxis]
     arcs1 = m.T - m.mean(axis=0)[:, np.newaxis]
@@ -53,23 +54,29 @@ def generalized_similarity(m, min_eps=0.001, max_iter=1000):
     
     return M
 
-def get_deputy_html(dep, party, df):
-    img = df[df['deputado_nome'] == dep]['deputado_urlFoto'].values[0]
+def get_deputy_html(dep_name, party, uf, url_img, degree, betweenness, closeness, clustering_coef):
     html = """ <html>
     <body>
+    <h2>{}</h2>
     <h2>Partido: {}</h2>
+    <h2>Estado: {}</h2>
     <img src="{}" width="100" height="150">
+    <h2>Degree: {:.4f}</h2>
+    <h2>Betweenness: {:.4f}</h2>
+    <h2>Closeness: {:.4f}</h2>
+    <h2>Clustering Coefficient: {:.4f}</h2>
     </body>
-    </html> """.format(party, img)
+    </html> """.format(dep_name, party, uf, url_img, degree, betweenness, closeness, clustering_coef)
     return html
 
-def draw_vis(g: Graph, groups, info=None, parties=None, theme=None, period=None, df=None):
-    net = Network(width="100%", height="100%", heading="Câmara dos Deputados")#, bgcolor="#222222", font_color="white")
+def draw_vis(g: Graph, groups, parties=None, theme=None, period=None, degrees=None, betweenness=None, closeness=None, clustering_coef=None):
+    net = Network(width="100%", height="100%", heading="Câmara dos Deputados") #, bgcolor="#222222", font_color="white")
 
     labels = g.vs['name']
     for i in g.vs.indices:
         size = 60 if labels[i] in parties else 20
-        net.add_node(i, label=labels[i], group=groups[i], title=get_deputy_html(labels[i], info[i], df), borderWidth=2, borderWidthSelected=4, size=size)
+        html = get_deputy_html(labels[i], g.vs['partido'][i], g.vs['uf'][i], g.vs['url_foto'][i], degrees[i], betweenness[i], closeness[i], clustering_coef[i])
+        net.add_node(i, label=labels[i], group=groups[i], title=html, borderWidth=2, borderWidthSelected=4, size=size)
 
     weights = g.es['weight']
     for i, e in enumerate(g.es):
@@ -154,7 +161,8 @@ def plot_distribution(data, filename=None, xlabel='', ylabel='', kde=False):
 def plot_similarity_distribution(similarities, weight_threshold):
     plt.figure()
     sns.distplot(similarities, kde=False, color='blue')
-    plt.axvline(x=weight_threshold, linestyle='--', color='red')
+    #plt.axvline(x=weight_threshold, linestyle='--', color='red')
+
     plt.ylabel("Number of edges")
     plt.xlabel("Generalized similarity")
     plt.show()
@@ -178,6 +186,8 @@ def metrics(g: Graph, file):
     degrees = g.degree()
     betweenness = g.betweenness()
     closeness = g.closeness()
+    clustering_coef = g.transitivity_local_undirected()
+
 
     file.write("\nGLOBAL MEASUURES\n")
     file.write("Connected: " + str(g.is_connected()) + "\n")
@@ -192,15 +202,13 @@ def metrics(g: Graph, file):
     file.write("Average Closeness: " + str(mean(closeness)) + "\n")
     file.write("Max Closeness: " + str(max(closeness)) + "\n")
 
-    if not g.is_directed():
-        clustering_coef = g.transitivity_local_undirected()
-
     file.write("\nLOCAL MEASURES\n")
     file.write("Vertex with highest degree: " + str(g.vs.select(_degree = g.maxdegree())['name']) + "\n")
     file.write("Vertex with highest betweenness: " + str(g.vs.select(_betweenness = max(betweenness))['name']) + "\n")
     file.write("Vertex with highest closeness: " + str(g.vs.select(_closeness = max(closeness))['name']) + "\n")
-    if not g.is_directed():
-        file.write("Vertex with highest clustering coefficient: " + str(g.vs[clustering_coef.index(max(clustering_coef))]['name']) + "\n")
+    file.write("Vertex with highest clustering coefficient: " + str(g.vs[clustering_coef.index(max(clustering_coef))]['name']) + "\n")
+
+    return degrees, betweenness, closeness, clustering_coef
 
 
 def collect_metrics(g: Graph, parameters):
@@ -216,11 +224,23 @@ def collect_metrics(g: Graph, parameters):
     file.write("Density: " + str(density) + "\n")
     file.write("Measure: " + str(measure) + "\n")
 
-    metrics(g, file)
-
+    degrees, betweenness, closeness, clustering_coef = metrics(g, file)
     file.close()
+    return degrees, betweenness, closeness, clustering_coef
 
 
 def get_votations_theme(theme: str, start: str, end: str) -> list:
     with open("resources/votacoes_{}_{}_to_{}.txt".format(theme, start, end), 'r') as file:
         return [v.replace("\n","") for v in file.readlines()]
+
+
+if __name__ == '__main__':
+
+    plt.figure()
+    densities = [0.10146, 0.21072, 0.306981]
+    plt.plot(densities, [0.657233260, 0.541853111, 0.4625294246], label="Generalized Similarity", marker='o', color='blue')
+    plt.plot(densities, [0.5472, 0.4004, 0.3214], label="Pearson Correlation", marker='s', color='red')
+    plt.xlabel("Density")
+    plt.ylabel("Modularity")
+    plt.legend()
+    plt.show()

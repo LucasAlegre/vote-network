@@ -17,6 +17,7 @@ def filter_by_theme(df, theme, start_date, end_date):
     print("Filtering votations by theme: " + theme)
     subject_votations = get_votations_theme(theme, start_date, end_date)
     print(subject_votations)
+    subject_votations = set(subject_votations)
     
     mask = df['idVotacao'].apply(lambda x: x in subject_votations)
     return df[mask]
@@ -156,7 +157,6 @@ def main():
     minw = min(g.es['weight'])
     g.es['weight'] = [(e - minw) / (maxw - minw) for e in g.es['weight']]
     summary(g)
-    g.save('graphs/g.graphml')
 
     if detection == 'leiden':
         communities = leidenalg.find_partition(g, leidenalg.ModularityVertexPartition, weights='weight', n_iterations=100).membership
@@ -174,18 +174,20 @@ def main():
     print("Modularity Score: ", modularity)
     save_modularity(modularity, theme, start_date, end_date)
 
-    info = [parties[i] for i in groups_by_party(df, reps, parties)]
-    
-    period = start_date + '_to_' + end_date
+    g.vs['partido'] = [parties[i] for i in groups_by_party(df, reps, parties)]
+    g.vs['url_foto'] = [df[df['deputado_nome'] == dep]['deputado_urlFoto'].values[0] for dep in g.vs['name']]
+    g.vs['uf'] = [df[df['deputado_nome'] == dep]['deputado_siglaUf'].values[0] for dep in g.vs['name']]
+    g.save('graphs/g.graphml')
+
+    degrees, betweenness, closeness, clustering_coef = collect_metrics(g, experiment_parameters)
 
     if plot_network:
-        draw_vis(g, groups=communities, info=info, parties=parties, theme=theme, period=period, df=df)
-
-    collect_metrics(g, experiment_parameters)
+        period = start_date + '_to_' + end_date
+        draw_vis(g, groups=communities, parties=parties, theme=theme, period=period, degrees=degrees, betweenness=betweenness, closeness=closeness, clustering_coef=clustering_coef)
 
 
 if __name__ == "__main__":
-    #g = read('g.graphml')
-    #plot_distribution(g.betweenness(), filename='betweenness', xlabel='Betweenness', ylabel='Number of edges')
+    #g = read('graphs/g.graphml')
+    #plot_distribution(g.degree(), filename='degree', xlabel='Degree', ylabel='Number of nodes')
     #draw_vis(g)
     main()
