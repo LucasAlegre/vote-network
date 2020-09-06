@@ -1,0 +1,25 @@
+Experiment Parameters
+Node limit: None
+Detection alg: leiden
+Weight Threshold: 0.9995
+Density: 0.3
+Measure: generalized
+
+GLOBAL MEASUURES
+Connected: False
+Density: 0.3069819087856137
+Diameter: 7
+Clustering Coefficient: 0.8321780238492593
+Average Local Clustering Coefficient: 0.8507845192321778
+Average Degree: 166.6911764705881
+Max Degree: 275
+Average Betweenness: 109.92463235294106
+Max Betweenness: 520.5980895600907
+Average Closeness: 0.005627770437584945
+Max Closeness: 0.006837327020663082
+
+LOCAL MEASURES
+Vertex with highest degree: ['Ottaci Nascimento']
+Vertex with highest betweenness: ['Vermelho']
+Vertex with highest closeness: ['Ottaci Nascimento']
+Vertex with highest clustering coefficient: Elmar Nascimento

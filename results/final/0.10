@@ -1,0 +1,25 @@
+Experiment Parameters
+Node limit: None
+Detection alg: leiden
+Weight Threshold: None
+Density: 0.10146517170404074
+Measure: pearson
+
+GLOBAL MEASUURES
+Connected: False
+Density: 0.10146517170404074
+Diameter: 5
+Clustering Coefficient: 0.6625796633564442
+Average Local Clustering Coefficient: 0.8132521050196626
+Average Degree: 55.095588235294095
+Max Degree: 227
+Average Betweenness: 96.85661764705883
+Max Betweenness: 1976.4535404670155
+Average Closeness: 0.003377137908222031
+Max Closeness: 0.004325693664412208
+
+LOCAL MEASURES
+Vertex with highest degree: ['Átila Lira']
+Vertex with highest betweenness: ['Lauriete']
+Vertex with highest closeness: ['Átila Lira']
+Vertex with highest clustering coefficient: Hugo Motta

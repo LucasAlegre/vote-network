@@ -1,0 +1,25 @@
+Experiment Parameters
+Node limit: None
+Detection alg: leiden
+Weight Threshold: None
+Density: 0.21071660708482287
+Measure: pearson
+
+GLOBAL MEASUURES
+Connected: False
+Density: 0.21071660708482287
+Diameter: 6
+Clustering Coefficient: 0.7605271049592436
+Average Local Clustering Coefficient: 0.8329449489866436
+Average Degree: 114.41911764705883
+Max Degree: 300
+Average Betweenness: 82.62867647058825
+Max Betweenness: 935.4948396247322
+Average Closeness: 0.004154953731761797
+Max Closeness: 0.005232574947240612
+
+LOCAL MEASURES
+Vertex with highest degree: ['Lauriete']
+Vertex with highest betweenness: ['Daniel Trzeciak']
+Vertex with highest closeness: ['Lauriete']
+Vertex with highest clustering coefficient: Marcelo Calero
