@@ -1,12 +1,10 @@
 import matplotlib.pyplot as plt
-from pyvis.physics import Physics
 import seaborn as sns
 import numpy as np
 import pandas as pd
 from igraph import plot, Graph, drawing, summary, mean
 from pyvis.network import Network
 from datetime import datetime
-import time
 import plotly.graph_objects as go
 
 
@@ -293,11 +291,13 @@ def get_votations_theme_period_sample(theme, year):
 if __name__ == '__main__':
 
     plt.figure()
-    densities = [0.10146, 0.21072, 0.306981]
-    plt.plot(densities, [0.657233260, 0.541853111, 0.4625294246], label="Generalized Similarity", marker='o', color='blue')
-    plt.plot(densities, [0.5472, 0.4004, 0.3214], label="Pearson Correlation", marker='s', color='red')
-    plt.xlabel("Density")
+    densities = [0.1, 0.15, 0.2, 0.25, 0.3]
+    plt.plot(densities, [0.6523, 0.5727, 0.5201, 0.4573, 0.3935], label="Generalized Similarity", marker='o', color='blue')
+    plt.plot(densities, [0.5041, 0.4199, 0.3596, 0.3153, 0.2830], label="Pearson-Correlation", marker='s', color='red')
+    plt.xlabel("Edge Density")
     plt.ylabel("Modularity")
+    plt.xticks(densities)
     plt.legend()
+    plt.tight_layout()
     plt.show()
 
