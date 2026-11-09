@@ -104,5 +104,30 @@
  "https://upload.wikimedia.org/wikipedia/commons/7/73/Uni%C3%A3o_Brasil_logo.svg": [
   "#254aa5",
   "#fbc707"
+ ],
+ "https://www.camara.leg.br/internet/Deputado/img/partidos/PFL.gif": [],
+ "https://www.camara.leg.br/internet/Deputado/img/partidos/PAN.gif": [],
+ "https://www.camara.leg.br/internet/Deputado/img/partidos/PHS.gif": [
+  "#4e0208"
+ ],
+ "https://www.camara.leg.br/internet/Deputado/img/partidos/PMB.gif": [
+  "#07729f",
+  "#000652"
+ ],
+ "https://www.camara.leg.br/internet/Deputado/img/partidos/PMN.gif": [
+  "#dd010a"
+ ],
+ "https://www.camara.leg.br/internet/Deputado/img/partidos/PRP.gif": [
+  "#ffde06",
+  "#097bc5"
+ ],
+ "https://www.camara.leg.br/internet/Deputado/img/partidos/PRTB.gif": [
+  "#fff700",
+  "#009340",
+  "#31498e"
+ ],
+ "https://www.camara.leg.br/internet/Deputado/img/partidos/PTC.gif": [
+  "#005a94",
+  "#fedf00"
  ]
 }

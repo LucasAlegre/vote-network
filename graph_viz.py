@@ -18,6 +18,9 @@ Uso no notebook:
     timelines = {'Geral': {'2023': g1, '2024': g2}, 'Saúde': {'2023': g3, '2024': g4}}
     graph_viz.show(timelines, path='camara.html')              # linhas do tempo
 
+    escalas = {'Ano': {'Geral': {...}, 'Saúde': {...}}, 'Legislatura': {'Geral': {...}, ...}}
+    graph_viz.show(escalas, path='camara.html')                # várias escalas de tempo
+
 Com linhas do tempo, cada grafo é um "quadro" (ex.: tema × período). Os vértices são
 identificados entre quadros pelo atributo ``name``; ao trocar de quadro, o ForceAtlas2
 continua a partir das posições atuais, então o grafo se transforma de forma contínua.
@@ -61,7 +64,12 @@ DEFAULT_SIZE_ATTRS = {
 }
 
 _NONE = 65535                 # código de "sem valor" nos atributos categóricos (uint16)
+# Votos: 0 = não votou; 1.. = rótulos abaixo (qualquer outro valor vira "Outro")
+_VOTE_LABELS = ("Sim", "Não", "Abstenção", "Obstrução", "Artigo 17", "Outro")
 _MAX_LAYOUT_EDGES = 150_000   # arestas usadas no layout inicial da união dos quadros
+# Valor das arestas quantizado em 10 bits (passo de ~0,1% da faixa de valores, abaixo das 3 casas
+# mostradas na página), guardado em dois planos de bytes (altos e baixos), que o gzip comprime bem.
+_Q_MAX = 1023
 
 
 def _clean(value):
@@ -111,19 +119,46 @@ def _as_dict(spec, default, available):
     return {k: v for k, v in spec.items() if k in available}
 
 
+def _is_graph(obj):
+    return hasattr(obj, "vs") and hasattr(obj, "es")
+
+
 def _timelines(graphs):
-    """igraph.Graph | {linha: {quadro: Graph}} | {linha: [(quadro, Graph), ...]} -> [(linha, [(quadro, Graph)])]."""
-    if hasattr(graphs, "vs") and hasattr(graphs, "es"):
-        return [("", [("", graphs)])]
-    timelines = []
-    for name, frames in graphs.items():
-        items = frames.items() if isinstance(frames, dict) else frames
-        items = [(str(label), g) for label, g in items if g is not None]
-        if items:
-            timelines.append((str(name), items))
+    """Normaliza as entradas aceitas em ``[(escala, linha, [(quadro, Graph)])]``.
+
+    igraph.Graph | {linha: {quadro: Graph}} | {linha: [(quadro, Graph), ...]}
+    | {escala: {linha: {quadro: Graph}}} (escala = ``""`` nas formas sem escala).
+    """
+    if _is_graph(graphs):
+        return [("", "", [("", graphs)])]
+
+    def lines(mapping, scale):
+        out = []
+        for name, frames in mapping.items():
+            items = frames.items() if isinstance(frames, dict) else frames
+            items = [(str(label), g) for label, g in items if g is not None]
+            if items:
+                out.append((scale, str(name), items))
+        return out
+
+    nested = [v for v in graphs.values() if isinstance(v, dict) and v]
+    three_levels = nested and all(isinstance(f, dict) for v in nested for f in v.values())
+    if three_levels:
+        timelines = [t for scale, mapping in graphs.items() for t in lines(mapping, str(scale))]
+    else:
+        timelines = lines(graphs, "")
     if not timelines:
         raise ValueError("Nenhum grafo para visualizar.")
     return timelines
+
+
+def _iso_day(value):
+    """Data (str ISO, date, datetime, pandas.Timestamp) -> 'AAAA-MM-DD', ou None."""
+    value = _clean(value)
+    if not isinstance(value, str):
+        return None
+    match = re.match(r"\d{4}-\d{2}-\d{2}", value)
+    return match.group(0) if match else None
 
 
 def align_labels(frames, attr="community", new_attr="Comunidade", label="Comunidade {}"):
@@ -472,19 +507,30 @@ def graph_to_html(
     node_noun: str = "deputados",
     edge_noun: str = "conexões",
     timeline_label: str = "Tema",
+    scale_label: str = "Escala",
+    period_attrs=("inicio", "fim"),
     layout=None,
     layout_seconds: float = 4,
     transition_seconds: float = 3,
     play_seconds: float = 4,
     fa2_settings: dict | None = None,
+    votacoes=None,
+    votos=None,
+    votacoes_attr: str = "ids_votacoes",
     seed: int = 42,
 ) -> str:
     """Gera a página HTML interativa para um grafo ou para linhas do tempo de grafos.
 
     graphs : igraph.Graph | dict
-        Um grafo não direcionado, ou ``{linha: {quadro: Graph}}`` (ex.: ``{tema: {período: grafo}}``).
+        Um grafo não direcionado, ``{linha: {quadro: Graph}}`` (ex.: ``{tema: {período: grafo}}``)
+        ou ``{escala: {linha: {quadro: Graph}}}`` (ex.: ``{'Ano': {...}, 'Legislatura': {...}}``),
+        com um seletor de escala na linha do tempo.
         Cada quadro é um grafo completo; os vértices são ligados entre quadros por ``label_attr``.
         Atributos de grafo (ex.: ``g['votações'] = 120``) aparecem como informação do quadro.
+    period_attrs : (str, str)
+        Atributos de grafo com a data de início e de fim (inclusive) de cada quadro (ex.:
+        ``g['inicio'] = '2023-02-01'``, ``g['fim'] = '2024-01-31'``). Se existirem, ao trocar de
+        tema ou de escala a página vai para o quadro que mais se sobrepõe ao atual no tempo.
     color_attrs : dict {atributo: rótulo}
         Atributos categóricos dos vértices que podem colorir os nós (o primeiro é o padrão).
     size_attrs : dict {atributo: rótulo}
@@ -515,6 +561,12 @@ def graph_to_html(
         Valores iniciais dos parâmetros do ForceAtlas2 (chaves em ``FA2_KEYS``), por exemplo
         ``{'gravity': 1, 'linLogMode': True}``. Na página, o botão "⚙ Parâmetros" permite
         ajustá-los com o layout rodando e copiar o dicionário resultante para cá.
+    votacoes, votos : pandas.DataFrame
+        Para a lista de votações da página (botão "⚖ Votações"). ``votacoes`` tem uma linha por
+        votação, com a coluna ``id`` e, se houver, ``data``, ``titulo``, ``ementa``, ``descricao``,
+        ``orgao``, ``aprovacao``, ``sim``, ``nao``, ``outros``, ``temas`` (lista) e ``url``.
+        ``votos`` tem as colunas (id da votação, ``label_attr`` do deputado, voto), nessa ordem.
+        As votações de cada quadro vêm do atributo de grafo ``votacoes_attr`` (lista de ids).
     """
     fa2 = {k: _clean(v) for k, v in (fa2_settings or {}).items()}
     unknown = sorted(set(fa2) - set(FA2_KEYS))
@@ -522,7 +574,8 @@ def graph_to_html(
         raise ValueError(f"fa2_settings: parâmetros desconhecidos {unknown}; válidos: {list(FA2_KEYS)}")
 
     timelines = _timelines(graphs)
-    frames = [(label, g) for _, items in timelines for label, g in items]
+    frames = [(label, g) for _, _, items in timelines for label, g in items]
+    scales = list(dict.fromkeys(scale for scale, _, _ in timelines))
     single = len(frames) == 1
     real_vattrs = set().union(*(g.vs.attributes() for _, g in frames))
     vattrs = real_vattrs | {"degree"}
@@ -648,18 +701,64 @@ def graph_to_html(
                     arr.append(_NONE if v is None else codes[a].setdefault(str(v), len(codes[a])))
                 refs[a] = put(np.array(arr, dtype="<u2"))
         s, t = keys // n_nodes, keys % n_nodes  # já ordenado por (s, t)
-        info = {k: _clean(g[k]) for k in g.attributes() if k != "name"}
+        q = np.round((vals - lo) / span * _Q_MAX).astype(np.int64)
+        attrs = g.attributes()
+        info = {k: _clean(g[k]) for k in attrs if k not in ("name", votacoes_attr, *period_attrs)}
+        start, end = (_iso_day(g[a]) if a in attrs else None for a in period_attrs)
         frames_meta.append({
             "label": label,
+            **({"t0": start, "t1": end} if start and end else {}),
             "info": {k: v for k, v in info.items() if v is not None},
             "n": put(gi.astype("<u2")),
             "a": refs,
             "s": put(np.diff(s, prepend=0).astype("<u2")),  # origem codificada por diferença
             "t": put(t.astype("<u2")),
-            "q": put(np.round((vals - lo) / span * 65535).astype("<u2")),
+            "q": put(np.concatenate([q >> 8, q & 255]).astype("u1")),  # [bytes altos..., bytes baixos...]
         })
     if any(len(c) >= _NONE for c in codes.values()):
         raise ValueError("Atributo categórico com valores distintos demais.")
+
+    # --- Votações: informações (JSON comprimido) e matriz votação × vértice com o voto (uint8) ---
+    votes_data = None
+    if votacoes is not None and votos is not None:
+        info_df = votacoes if "id" in votacoes.columns else votacoes.reset_index().rename(columns={votacoes.index.name or "index": "id"})
+        info_df = info_df.assign(id=info_df["id"].astype(str))
+        used = {str(v) for _, g in frames if votacoes_attr in g.attributes() for v in (g[votacoes_attr] or [])}
+        if used:
+            info_df = info_df[info_df["id"].isin(used)]
+        if "data" in info_df.columns:
+            info_df = info_df.sort_values("data", kind="stable")
+        info_df = info_df.drop_duplicates("id").reset_index(drop=True)
+        if len(info_df) >= _NONE:
+            raise ValueError("Votações demais.")
+        vidx = {v: i for i, v in enumerate(info_df["id"])}
+        vv = votos.iloc[:, :3].set_axis(["id", "nome", "voto"], axis=1)
+        vv = vv.assign(id=vv["id"].astype(str), nome=vv["nome"].astype(str))
+        vv = vv[vv["id"].isin(vidx) & vv["nome"].isin(index)].drop_duplicates(["id", "nome"])
+        code_of = {label: i + 1 for i, label in enumerate(_VOTE_LABELS)}
+        matrix = np.zeros((len(vidx), n_nodes), dtype=np.uint8)
+        matrix[vv["id"].map(vidx).to_numpy(), vv["nome"].map(index).to_numpy()] = (
+            vv["voto"].map(code_of).fillna(len(_VOTE_LABELS)).to_numpy(dtype=np.uint8))
+        for (_, g), meta in zip(frames, frames_meta):
+            ids = g[votacoes_attr] if votacoes_attr in g.attributes() else list(vidx)
+            meta["v"] = put(np.array(sorted({vidx[str(v)] for v in ids if str(v) in vidx}), dtype="<u2"))
+        records = []
+        for row in info_df.to_dict("records"):
+            rec = {}
+            for k, v in row.items():
+                if k == "temas":
+                    v = [str(t) for t in v] if isinstance(v, (list, tuple, set, np.ndarray)) else []
+                else:
+                    v = _clean(v)
+                if v is not None and v != []:
+                    rec[k] = v
+            records.append(rec)
+        meta_json = json.dumps(records, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode()
+        votes_data = {
+            "m": put(matrix.ravel()),
+            "labels": list(_VOTE_LABELS),
+            "meta": base64.b64encode(gzip.compress(meta_json, compresslevel=9, mtime=0)).decode("ascii"),
+        }
 
     frame_index = iter(range(len(frames)))
     data = {
@@ -684,7 +783,10 @@ def graph_to_html(
             "nodeNoun": node_noun,
             "edgeNoun": edge_noun,
             "timelineLabel": timeline_label,
-            "timelines": [{"name": name, "frames": [next(frame_index) for _ in items]} for name, items in timelines],
+            "scaleLabel": scale_label,
+            "scales": scales,
+            "timelines": [{"name": name, "scale": scales.index(scale), "frames": [next(frame_index) for _ in items]}
+                          for scale, name, items in timelines],
             "layoutSeconds": layout_seconds,
             "transitionSeconds": transition_seconds,
             "playSeconds": play_seconds,
@@ -693,7 +795,9 @@ def graph_to_html(
         "nodes": nodes,
         "dicts": {a: list(c) for a, c in codes.items()},
         "valueRange": [float(lo), float(hi)],
+        "qMax": _Q_MAX,
         "frames": frames_meta,
+        "votes": votes_data,
         "blob": base64.b64encode(gzip.compress(bytes(buf), compresslevel=9, mtime=0)).decode("ascii"),
     }
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
@@ -741,6 +845,7 @@ _TEMPLATE = r"""<!doctype html>
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
   --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948; --other: #a3a29b;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --good-text: #006300; --bad-text: #c62f2f;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -751,6 +856,7 @@ _TEMPLATE = r"""<!doctype html>
     --faded: #2a2a28; --edge: #898781; --shadow: rgba(0,0,0,.5); --accent: #3987e5;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
     --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --other: #6f6e68;
+  --good-text: #0ca30c; --bad-text: #e66767;
   }
 }
 :root[data-theme="dark"] {
@@ -761,6 +867,7 @@ _TEMPLATE = r"""<!doctype html>
   --faded: #2a2a28; --edge: #898781; --shadow: rgba(0,0,0,.5); --accent: #3987e5;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
   --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --other: #6f6e68;
+  --good-text: #0ca30c; --bad-text: #e66767;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -778,7 +885,7 @@ button, input, select { font: inherit; color: inherit; }
 .field { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12.5px; }
 select, .btn, .search input { height: 32px; border: 1px solid var(--border); border-radius: 8px;
   background: var(--raised); padding: 0 10px; }
-select { padding-right: 6px; max-width: 180px; text-overflow: ellipsis; }
+select { padding-right: 6px; max-width: 140px; text-overflow: ellipsis; }
 .btn { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .btn:hover, select:hover { border-color: var(--axis); }
 .btn:disabled { opacity: .45; cursor: default; }
@@ -786,11 +893,11 @@ select { padding-right: 6px; max-width: 180px; text-overflow: ellipsis; }
 #layoutBtn { min-width: 96px; justify-content: center; }  /* ▶/❚❚ sem mudar a largura da barra */
 .btn:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .range { display: flex; align-items: center; gap: 6px; }
-.range input { width: 120px; accent-color: var(--accent); }
-.range output { min-width: 42px; font-variant-numeric: tabular-nums; color: var(--text); }
+.range input { width: 96px; accent-color: var(--accent); }
+.range output { min-width: 34px; font-variant-numeric: tabular-nums; color: var(--text); }
 
 .search { position: relative; }
-.search input { width: 220px; }
+.search input { width: 170px; }
 .suggest { position: absolute; z-index: 20; top: 36px; left: 0; right: 0; margin: 0; padding: 4px;
   list-style: none; background: var(--raised); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 8px 24px var(--shadow); max-height: 320px; overflow: auto; }
@@ -811,14 +918,14 @@ select { padding-right: 6px; max-width: 180px; text-overflow: ellipsis; }
 .side > .legend { flex-shrink: 0; max-height: 100%; }
 .side.with-params > .legend { max-height: 40%; }  /* com o painel aberto, a legenda rola */
 .legend { padding: 10px; }
-.legend h2, .params h2, .compo h2 { margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--text-2);
+.legend h2, .params h2, .compo h2, .votes h2 { margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--text-2);
   text-transform: uppercase; letter-spacing: .04em; }
 
 .params { padding: 10px 12px; flex-shrink: 2 !important; }
 .params .head { display: flex; align-items: center; justify-content: space-between; }
-.params .close, .compo .close { width: 24px; height: 24px; border: 0; background: none; border-radius: 6px; cursor: pointer;
+.params .close, .compo .close, .votes .close { width: 24px; height: 24px; border: 0; background: none; border-radius: 6px; cursor: pointer;
   font-size: 16px; color: var(--text-2); }
-.params .close:hover, .compo .close:hover { background: var(--grid); }
+.params .close:hover, .compo .close:hover, .votes .close:hover { background: var(--grid); }
 .params .status { margin: 0 0 8px; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .params .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
 .params .btn { height: 28px; padding: 0 8px; font-size: 12.5px; }
@@ -896,6 +1003,38 @@ select { padding-right: 6px; max-width: 180px; text-overflow: ellipsis; }
 .compo .hl .names { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; max-height: 92px; overflow: auto; }
 .compo .hl .names button { border: 1px solid var(--border); background: var(--raised); border-radius: 999px; padding: 1px 8px;
   font-size: 11.5px; cursor: pointer; }
+/* Votações: lista + votação selecionada */
+.side > .votes { display: flex; flex-direction: column; overflow: hidden; padding: 10px 12px; flex-shrink: 2; min-height: 180px; }
+.votes .head { display: flex; align-items: center; justify-content: space-between; }
+.votes .count { font-size: 12px; color: var(--text-2); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.votes input[type="search"] { width: 100%; height: 30px; margin: 6px 0; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--raised); padding: 0 8px; }
+.vsel { flex: none; max-height: 48%; overflow: auto; margin-bottom: 6px; padding: 8px; border-radius: 8px; background: var(--grid); font-size: 12.5px; }
+.vsel .vhead { display: flex; gap: 6px; align-items: flex-start; }
+.vsel .vhead strong { flex: 1; font-size: 13px; }
+.vsel p { margin: 4px 0; }
+.vsel .vementa { color: var(--text-2); }
+.vtexts.clamp p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.vcounts { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 6px 0 2px; }
+.vcounts span { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.vofficial { font-size: 11.5px; color: var(--text-2); }
+.chip { display: inline-block; margin: 2px 4px 0 0; padding: 0 7px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--raised); font-size: 11px; }
+.vactions { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 6px; }
+.vactions a { color: var(--accent); }
+.vlist { flex: 1 1 auto; min-height: 60px; overflow: auto; list-style: none; margin: 0; padding: 0; }
+.vitem { display: block; width: 100%; padding: 6px 4px; border: 0; border-bottom: 1px solid var(--grid); background: none;
+  text-align: left; cursor: pointer; }
+.vitem:hover { background: var(--grid); }
+.vitem.on { background: var(--grid); box-shadow: inset 3px 0 0 var(--accent); }
+.vmeta { display: flex; gap: 6px; font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.vres { margin-left: auto; white-space: nowrap; }
+.vres.ok { color: var(--good-text); }
+.vres.no { color: var(--bad-text); }
+.vitem .vtitle { display: block; font-weight: 600; font-size: 12.5px; }
+.vitem .vdesc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: 11.5px; color: var(--text-2); }
+.vempty { padding: 8px 4px; font-size: 12px; color: var(--text-2); }
 .tooltip { position: absolute; z-index: 40; pointer-events: none; max-width: 260px; padding: 6px 9px; font-size: 12px; line-height: 1.35;
   background: var(--raised); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px var(--shadow); }
 .tooltip strong { font-size: 13px; }
@@ -983,6 +1122,8 @@ select { padding-right: 6px; max-width: 180px; text-overflow: ellipsis; }
               title="Parâmetros do layout (ForceAtlas2)" aria-label="Parâmetros do layout">⚙</button>
       <button class="btn" id="compoBtn" type="button" aria-pressed="false" aria-controls="compo"
               title="Distribuição de uma categoria (ex.: partidos) em cada grupo (ex.: comunidades)">▦ Composição</button>
+      <button class="btn" id="votesBtn" type="button" aria-pressed="false" aria-controls="votes"
+              title="Votações do período e tema: informações da proposição e voto de cada deputado">⚖ Votações</button>
       <button class="btn" id="tableBtn" type="button" aria-pressed="false">☰ Lista</button>
       <button class="btn" id="themeBtn" type="button" title="Tema: automático" aria-label="Tema: automático">◐</button>
       <button class="btn" id="fullBtn" type="button" title="Tela cheia" aria-label="Tela cheia">⛶</button>
@@ -993,6 +1134,7 @@ select { padding-right: 6px; max-width: 180px; text-overflow: ellipsis; }
     <div class="side">
       <aside class="overlay legend" id="legend" aria-label="Legenda"></aside>
       <section class="overlay params" id="params" hidden aria-label="Parâmetros do layout"></section>
+      <section class="overlay votes" id="votes" hidden aria-label="Votações"></section>
     </div>
     <div class="rside">
       <aside class="overlay panel" id="panel" hidden aria-live="polite"></aside>
@@ -1008,6 +1150,8 @@ select { padding-right: 6px; max-width: 180px; text-overflow: ellipsis; }
     <div class="loading" id="loading">Carregando bibliotecas…</div>
   </div>
   <footer class="timeline" id="timeline" hidden aria-label="Linha do tempo">
+    <div class="field" id="tlScaleField" hidden><span id="tlScaleName"></span>
+      <div class="seg-toggle" id="tlScale" role="group"></div></div>
     <label class="field" id="tlField"><span id="tlName"></span> <select id="tlSelect"></select></label>
     <div class="tl-buttons">
       <button class="btn" id="tlPrev" type="button" title="Período anterior (←)" aria-label="Período anterior">‹</button>
@@ -1104,14 +1248,22 @@ try {
 const NODES = DATA.nodes, FRAMES = DATA.frames, TIMELINES = C.timelines, KINDS = C.attrKinds, DICTS = DATA.dicts;
 const [VLO, VHI] = DATA.valueRange;
 const VSPAN = VHI - VLO || 1;
+const QMAX = DATA.qMax || 65535;
 const view = (Type, [offset, length]) => new Type(BUF, offset, length);
 const catValue = (attr, code) => (code === NONE ? null : DICTS[attr][code]);
+// Votações (opcional): informações de cada uma e matriz votação × deputado com o voto (1 byte)
+const VOTES = DATA.votes ? {
+  meta: JSON.parse(new TextDecoder().decode(await inflate(DATA.votes.meta))),
+  matrix: view(Uint8Array, DATA.votes.m),
+} : null;
 const frameCache = new Map();
 function frameData(fi) {
   if (frameCache.has(fi)) return frameCache.get(fi);
   const M = FRAMES[fi], attrs = {};
   for (const [attr, ref] of Object.entries(M.a)) attrs[attr] = view(KINDS[attr] === "num" ? Float32Array : Uint16Array, ref);
-  const F = { nodes: view(Uint16Array, M.n), attrs, sd: view(Uint16Array, M.s), t: view(Uint16Array, M.t), q: view(Uint16Array, M.q) };
+  const [qo, q2] = M.q;  // valor quantizado: bytes altos e depois bytes baixos
+  const F = { nodes: view(Uint16Array, M.n), attrs, sd: view(Uint16Array, M.s), t: view(Uint16Array, M.t),
+              qh: new Uint8Array(BUF, qo, q2 / 2), ql: new Uint8Array(BUF, qo + q2 / 2, q2 / 2) };
   frameCache.set(fi, F);
   return F;
 }
@@ -1134,6 +1286,19 @@ for (const attr of Object.keys(C.colorAttrs)) {
   for (const k of keys) groups[attr].slot.set(k, k !== MISSING && slot < SLOTS ? slot++ : -1);
 }
 
+// "Voto na votação selecionada" funciona como um atributo de cor virtual (legenda, composição...)
+const VOTE = "__voto", NO_VOTE = "Não votou";
+const VOTE_LABELS = [NO_VOTE, ...(DATA.votes ? DATA.votes.labels : [])];
+if (VOTES) {
+  C.fixedColors[VOTE] = { // Sim × Não em azul × laranja (distinguíveis também por daltônicos)
+    Sim: ["#2a78d6", "#3987e5"], "Não": ["#eb6834", "#d95926"], "Abstenção": ["#eda100", "#c98500"],
+    "Obstrução": ["#6250d6", "#9085e9"], "Artigo 17": ["#e87ba4", "#d55181"], Outro: ["#898781", "#898781"],
+    [NO_VOTE]: ["#d3d2cb", "#45443f"],
+  };
+  groups[VOTE] = { rank: new Map([...VOTE_LABELS.slice(1), NO_VOTE].map((k, i) => [k, i])), slot: new Map() };
+}
+const attrLabel = (attr) => (attr === VOTE ? "Voto" : C.colorAttrs[attr]);
+
 // ---------- Estado ----------
 const state = {
   colorAttr: Object.keys(C.colorAttrs)[0] || null,
@@ -1144,6 +1309,7 @@ const state = {
   selected: null,
   focusNeighbors: new Set(),
   highlight: null, // critério de destaque da composição: {rows, rowKey, segs, segKeys}
+  vote: null,      // índice da votação selecionada (cores pelo voto)
 };
 const cur = { tl: 0, pos: 0 };
 const curFrame = () => FRAMES[TIMELINES[cur.tl].frames[cur.pos]];
@@ -1158,6 +1324,7 @@ let sigma = null; // criado depois do primeiro quadro
 // Por isso, antes de recolorir/redimensionar, fazemos o reprocessamento pendente na hora.
 const syncSigma = () => { if (sigma && sigma.needToProcess) sigma.refresh(); };
 function attrValue(n, attr) {
+  if (attr === VOTE) return state.vote == null ? null : (VOTE_LABELS[VOTES.matrix[state.vote * NODES.length + +n]] ?? "Outro");
   const a = graph.getNodeAttribute(n, "attrs");
   if (attr in a) return a[attr];
   if (attr === "degree") return graph.degree(n);
@@ -1200,7 +1367,7 @@ function loadFrame(tl, pos, { home = false } = {}) {
   let s = 0;
   for (let k = 0; k < F.t.length; k++) {
     s += F.sd[k];
-    const w = F.q[k] / 65535;
+    const w = ((F.qh[k] << 8) | F.ql[k]) / QMAX;
     graph.addEdge(String(s), String(F.t[k]), { value: VLO + w * VSPAN, weight: 0.05 + 0.95 * w, size: 0.4 + 0.8 * w });
   }
   if (home) graph.updateEachNodeAttributes((n, a) => ({ ...a, x: NODES[+n].x, y: NODES[+n].y }), { attributes: ["x", "y"] });
@@ -1451,10 +1618,15 @@ function renderPanel(node) {
   panel.append(head);
 
   const dl = el("dl");
+  if (state.vote != null) {
+    const v = get(VOTE);
+    dl.append(el("dt", { textContent: "Voto" }), el("dd", {}, el("span", { className: "sw", style: `background:${groupColorOf(VOTE, v)}` }), v));
+  }
   for (const [attr, label] of Object.entries(C.infoAttrs)) {
     const dd = el("dd");
     const logo = C.logoAttr && C.logos[get(C.logoAttr)];
-    if (attr === C.logoFor && logo) dd.append(el("img", { className: "logo", src: logo, alt: "", referrerPolicy: "no-referrer" }));
+    if (attr === C.logoFor && logo) dd.append(el("img", { className: "logo", src: logo, alt: "", referrerPolicy: "no-referrer",
+      onerror: (ev) => ev.target.remove() }));  // logo fora do ar: só o texto
     dd.append(fmt(get(attr)));
     dl.append(el("dt", { textContent: label }), dd);
   }
@@ -1493,8 +1665,9 @@ function renderLegend() {
   graph.forEachNode((n, a) => counts.set(a.g, (counts.get(a.g) || 0) + 1));
   const list = [...counts].map(([key, count]) => ({ key, count, slot: info.slot.get(key) ?? -1 }))
     .sort((a, b) => (info.rank.get(a.key) ?? 1e9) - (info.rank.get(b.key) ?? 1e9));
-  box.append(el("h2", { textContent: C.colorAttrs[state.colorAttr] }),
-    el("p", { className: "hint", textContent: "Clique para mostrar/ocultar" }));
+  box.append(el("h2", { textContent: attrLabel(state.colorAttr) }));
+  if (state.colorAttr === VOTE) box.append(el("p", { className: "hint", textContent: voteTitle(state.vote) }));
+  box.append(el("p", { className: "hint", textContent: "Clique para mostrar/ocultar" }));
   const setAll = (hide) => { state.hidden = new Set(hide ? list.map((g) => g.key) : []); afterFilter(); };
   box.append(el("div", { className: "actions" },
     el("button", { className: "linklike", type: "button", textContent: "Todos", onclick: () => setAll(false) }),
@@ -1542,8 +1715,13 @@ document.title = C.title;
 $("edgeLabel").textContent = C.edgeLabel;
 
 const colorSel = $("colorBy");
-for (const [attr, label] of Object.entries(C.colorAttrs)) colorSel.append(el("option", { value: attr, textContent: label }));
-colorSel.closest("label").hidden = Object.keys(C.colorAttrs).length < 2;
+function syncColorSelect() {
+  const attrs = [...Object.keys(C.colorAttrs), ...(state.vote != null ? [VOTE] : [])];
+  colorSel.replaceChildren(...attrs.map((a) => el("option", { value: a, textContent: attrLabel(a) })));
+  colorSel.value = state.colorAttr;
+  colorSel.closest("label").hidden = attrs.length < 2;
+}
+syncColorSelect();
 colorSel.onchange = () => {
   state.colorAttr = colorSel.value; state.hidden = new Set();
   applyColors(); afterFilter();
@@ -1596,6 +1774,7 @@ function setTheme() {
 }
 function applyTheme() {
   setTheme();
+  applyColors(); // cada tema tem seus tons (partidos, comunidades, votos)
   renderLegend();
   if (state.selected != null) renderPanel(state.selected);
   renderCompo();
@@ -1847,9 +2026,12 @@ async function copyCode(pre, btn) {
   btn.textContent = ok ? "Copiado ✓" : "Selecionado: Ctrl+C";
   setTimeout(() => (btn.textContent = "Copiar"), 1800);
 }
+function updateSideClass() { // com parâmetros ou votações abertos, a legenda encolhe e rola
+  $("params").parentElement.classList.toggle("with-params", !$("params").hidden || !$("votes").hidden);
+}
 function toggleParams(show) {
   $("params").hidden = !show;
-  $("params").parentElement.classList.toggle("with-params", show);
+  updateSideClass();
   $("paramsBtn").setAttribute("aria-pressed", String(show));
   updateLayoutUI();
 }
@@ -1900,6 +2082,7 @@ const CATS = Object.keys(C.colorAttrs);
 const compo = { open: false, mode: "share", view: "bars" };
 compo.rows = CATS.includes("Comunidade") ? "Comunidade" : CATS[0];
 compo.segs = CATS.includes("Partido") && compo.rows !== "Partido" ? "Partido" : CATS.find((a) => a !== compo.rows);
+const COMPO_DEFAULT = { rows: compo.rows, segs: compo.segs };
 $("compoBtn").hidden = CATS.length < 2;
 const FOLD = 0.025; // trechos com menos de 2,5% do grupo vão para "Outros" (detalhes no tooltip e na tabela)
 const catOf = (n, attr) => { const v = attrValue(n, attr); return v == null ? MISSING : String(v); };
@@ -1973,7 +2156,7 @@ function renderCompo() {
   const pick = (value, label, onchange) => {
     const sel = el("select");
     sel.setAttribute("aria-label", label);
-    for (const a of CATS) sel.append(el("option", { value: a, textContent: C.colorAttrs[a] }));
+    for (const a of [...CATS, ...(state.vote != null ? [VOTE] : [])]) sel.append(el("option", { value: a, textContent: attrLabel(a) }));
     sel.value = value;
     sel.onchange = () => onchange(sel.value);
     return sel;
@@ -2054,7 +2237,7 @@ function renderCompo() {
     const colAttr = groupsAsCols ? compo.rows : compo.segs, lineAttr = groupsAsCols ? compo.segs : compo.rows;
     const prefix = commonPrefix(colKeys);
     const swatch = (attr, k, gap) => el("span", { className: "sw", style: `display:inline-block;margin-right:${gap}px;background:${groupColorOf(attr, k)}` });
-    const head = el("tr", {}, el("th", { textContent: C.colorAttrs[lineAttr] }),
+    const head = el("tr", {}, el("th", { textContent: attrLabel(lineAttr) }),
       ...colKeys.map((k) => el("th", { title: k }, swatch(colAttr, k, 4), k.slice(prefix.length))),
       el("th", { textContent: "Total" }));
     const body = lineKeys.map((line) => el("tr", {},
@@ -2086,12 +2269,137 @@ function updateRightSide() {
 }
 $("compoBtn").onclick = () => toggleCompo(!compo.open);
 
+// ---------- Votações: lista do quadro atual, informações da proposição e voto de cada deputado ----------
+const votesUI = { open: false, query: "", expanded: false };
+let prevColorAttr = null;
+$("votesBtn").hidden = !VOTES;
+const VOTE_TEXT = VOTES ? VOTES.meta.map((m) => norm([m.titulo, m.ementa, m.descricao, ...(m.temas || [])].filter(Boolean).join(" "))) : [];
+const frameVotes = () => (VOTES && curFrame().v ? Array.from(view(Uint16Array, curFrame().v)) : []);
+const fmtDate = (iso) => { if (!iso) return ""; const [y, m, d] = String(iso).slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
+const voteTitle = (v) => { const m = VOTES.meta[v]; return [m.titulo || m.id, fmtDate(m.data)].filter(Boolean).join(" · "); };
+const resultOf = (m) => (m.aprovacao == null ? null : m.aprovacao ? ["ok", "✓ Aprovada"] : ["no", "✗ Rejeitada"]);
+
+function selectVote(v) {
+  if (state.vote === v) return clearVote(); // clicar de novo desfaz
+  if (state.colorAttr !== VOTE) prevColorAttr = state.colorAttr;
+  state.vote = v;
+  votesUI.expanded = false;
+  state.colorAttr = VOTE;
+  state.hidden = new Set();
+  refreshVoteViews();
+}
+function dropVote() { // desfaz a seleção (sem redesenhar)
+  state.vote = null;
+  if (state.colorAttr === VOTE) { state.colorAttr = prevColorAttr ?? CATS[0] ?? null; state.hidden = new Set(); }
+  if (state.highlight && (state.highlight.rows === VOTE || state.highlight.segs === VOTE)) state.highlight = null;
+  if (compo.rows === VOTE || compo.segs === VOTE) Object.assign(compo, COMPO_DEFAULT);
+}
+function clearVote() { dropVote(); refreshVoteViews(); }
+function refreshVoteViews() {
+  syncColorSelect();
+  applyColors();
+  computeHighlight();
+  afterFilter();
+  renderVotes();
+  renderCompo();
+}
+function showPartyVotes() { // composição: uma barra por partido, dividida pelo voto
+  compo.rows = CATS.includes("Partido") ? "Partido" : CATS[0];
+  compo.segs = VOTE;
+  compo.view = "bars";
+  compo.mode = "share";
+  toggleCompo(true);
+}
+
+// O esqueleto do painel é criado uma vez (a busca não perde o foco); detalhes e lista são refeitos.
+const votesBox = $("votes");
+const votesCount = el("span", { className: "count" });
+const votesSearch = el("input", { type: "search", placeholder: "Buscar proposição, ementa, tema…", autocomplete: "off" });
+votesSearch.setAttribute("aria-label", "Buscar votação");
+const votesSel = el("div", { className: "vsel" });
+const votesList = el("ol", { className: "vlist" });
+votesBox.append(
+  el("div", { className: "head" }, el("h2", {}, "Votações ", votesCount),
+    el("button", { className: "close", type: "button", title: "Fechar", ariaLabel: "Fechar", textContent: "×", onclick: () => toggleVotes(false) })),
+  votesSearch, votesSel, votesList);
+let searchTimer = 0;
+votesSearch.oninput = () => {
+  votesUI.query = norm(votesSearch.value.trim());
+  clearTimeout(searchTimer); // espera a digitação parar (não depende do próximo quadro desenhado)
+  searchTimer = setTimeout(renderVoteList, 120);
+};
+
+function renderVotes() {
+  if (!VOTES || !votesUI.open) { votesBox.hidden = true; updateSideClass(); return; }
+  votesBox.hidden = false;
+  updateSideClass();
+  renderVoteDetails();
+  renderVoteList();
+}
+function renderVoteDetails() {
+  votesSel.replaceChildren();
+  votesSel.hidden = state.vote == null;
+  if (state.vote == null) return;
+  const m = VOTES.meta[state.vote], res = resultOf(m);
+  const long = (m.descricao || "").length + (m.ementa || "").length > 240;
+  const tally = new Map();
+  graph.forEachNode((n) => { const v = attrValue(n, VOTE); tally.set(v, (tally.get(v) || 0) + 1); });
+  const order = [...VOTE_LABELS.slice(1), NO_VOTE];
+  votesSel.append(...[
+    el("div", { className: "vhead" }, el("strong", { textContent: m.titulo || m.id }),
+      el("button", { className: "close", type: "button", title: "Limpar seleção", ariaLabel: "Limpar seleção", textContent: "×", onclick: clearVote })),
+    el("div", { className: "vmeta" }, el("span", { textContent: [fmtDate(m.data), m.orgao].filter(Boolean).join(" · ") }),
+      res ? el("span", { className: `vres ${res[0]}`, textContent: res[1] }) : null),
+    el("div", { className: "vtexts" + (long && !votesUI.expanded ? " clamp" : "") },
+      m.descricao ? el("p", { textContent: m.descricao }) : null,
+      m.ementa ? el("p", { className: "vementa", textContent: m.ementa }) : null),
+    long ? el("button", { className: "linklike", type: "button", textContent: votesUI.expanded ? "ver menos" : "ver ementa completa",
+      onclick: () => { votesUI.expanded = !votesUI.expanded; renderVoteDetails(); } }) : null,
+    el("div", { className: "vcounts", title: `Votos dos ${C.nodeNoun} deste grafo` },
+      ...order.filter((k) => tally.get(k)).map((k) => el("span", {},
+        el("span", { className: "sw", style: `background:${groupColorOf(VOTE, k)}` }), `${k} ${nf.format(tally.get(k))}`))),
+    m.sim != null ? el("div", { className: "vofficial", textContent:
+      `Placar oficial: Sim ${nf.format(m.sim)} · Não ${nf.format(m.nao ?? 0)} · Outros ${nf.format(m.outros ?? 0)}` }) : null,
+    m.temas && m.temas.length ? el("div", {}, ...m.temas.map((t) => el("span", { className: "chip", textContent: t }))) : null,
+    el("div", { className: "vactions" },
+      m.url ? el("a", { href: m.url, target: "_blank", rel: "noopener", textContent: "Proposição na Câmara ↗" }) : null,
+      CATS.length ? el("button", { className: "linklike", type: "button", textContent: "Como votou cada partido", onclick: showPartyVotes }) : null),
+  ].filter((x) => x != null));  // append(null) escreveria o texto "null"
+}
+function renderVoteList() {
+  const ids = frameVotes().sort((a, b) => String(VOTES.meta[b].data || "").localeCompare(String(VOTES.meta[a].data || "")));
+  const shown = votesUI.query ? ids.filter((v) => VOTE_TEXT[v].includes(votesUI.query)) : ids;
+  votesCount.textContent = votesUI.query ? `(${nf.format(shown.length)} de ${nf.format(ids.length)})` : `(${nf.format(ids.length)})`;
+  if (!shown.length) {
+    votesList.replaceChildren(el("li", { className: "vempty", textContent: ids.length ? "Nenhuma votação encontrada." : "Sem votações neste quadro." }));
+    return;
+  }
+  votesList.replaceChildren(...shown.map((v) => {
+    const m = VOTES.meta[v], res = resultOf(m);
+    const b = el("button", { type: "button", className: "vitem" + (v === state.vote ? " on" : ""), onclick: () => selectVote(v) },
+      el("span", { className: "vmeta" }, el("span", { textContent: [fmtDate(m.data), m.orgao].filter(Boolean).join(" · ") }),
+        res ? el("span", { className: `vres ${res[0]}`, textContent: res[1] }) : null),
+      el("span", { className: "vtitle", textContent: m.titulo || m.id }),
+      m.descricao ? el("span", { className: "vdesc", textContent: m.descricao }) : null);
+    b.setAttribute("aria-pressed", String(v === state.vote));
+    return el("li", {}, b);
+  }));
+}
+function toggleVotes(show) {
+  votesUI.open = show;
+  $("votesBtn").setAttribute("aria-pressed", String(show));
+  renderVotes();
+  if (show) votesSearch.focus({ preventScroll: true });
+}
+$("votesBtn").onclick = () => toggleVotes(!votesUI.open);
+
 // ---------- Linha do tempo ----------
 // Ao trocar de quadro: o grafo muda e o ForceAtlas2 continua das posições atuais por
 // `transitionSeconds` (ou sem parar, se o layout já estava rodando de forma contínua).
 function afterFrame() {
   state.hovered = null;
   if (state.selected != null && !graph.hasNode(state.selected)) state.selected = null;
+  if (state.vote != null && !frameVotes().includes(state.vote)) { dropVote(); syncColorSelect(); }
   applyColors();
   applySizes();
   computeFocus();
@@ -2103,6 +2411,7 @@ function afterFrame() {
   if (!$("tableView").hidden) renderTable();
   computeHighlight();
   renderCompo();
+  renderVotes();
   refresh();
 }
 function go(tl, pos) {
@@ -2114,32 +2423,83 @@ function go(tl, pos) {
   stopLayout();
   unfreezeView();
   loadFrame(tl, pos);
+  lastPos.set(tl, pos);
   afterFrame();
   if (continuous) startLayout();
   else if (C.transitionSeconds > 0) startLayout(C.transitionSeconds);
 }
-const frameInfo = (M) => Object.entries(M.info).map(([k, v]) =>
-  typeof v === "number" && Number.isInteger(v) ? `${nf.format(v)} ${k}` : `${k} ${fmt(v)}`).join(" · ");
 
-const tlSel = $("tlSelect"), tlRange = $("tlRange");
-TIMELINES.forEach((t, i) => tlSel.append(el("option", { value: i, textContent: t.name || "—" })));
-$("tlName").textContent = C.timelineLabel;
-$("tlField").hidden = TIMELINES.length < 2;
-$("timeline").hidden = !multi;
-// Ordem dos períodos (na ordem em que aparecem), para cair no mais próximo ao trocar de tema
+// Datas dos quadros (atributos de grafo `inicio`/`fim`, fim inclusive)
+const DAY = 864e5, MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const dayOf = (iso) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
+function spanText(M) {
+  if (!M.t0 || !M.t1) return "";
+  const a = new Date(dayOf(M.t0)), b = new Date(dayOf(M.t1)), next = new Date(dayOf(M.t1) + DAY);
+  const whole = a.getUTCDate() === 1 && next.getUTCDate() === 1;  // meses inteiros: "fev/2023–jan/2024"
+  const f = (d) => whole ? `${MONTHS[d.getUTCMonth()]}/${d.getUTCFullYear()}`
+    : `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+  return `${f(a)}–${f(b)}`;
+}
+const frameInfo = (M) => [spanText(M), ...Object.entries(M.info).map(([k, v]) =>
+  typeof v === "number" && Number.isInteger(v) ? `${nf.format(v)} ${k}` : `${k} ${fmt(v)}`)].filter(Boolean).join(" · ");
+
+// Intervalo [início, fim) de cada quadro; sem datas, a ordem em que os rótulos dos períodos aparecem
 const PERIOD_ORDER = new Map();
 for (const t of TIMELINES) for (const fi of t.frames) {
   if (!PERIOD_ORDER.has(FRAMES[fi].label)) PERIOD_ORDER.set(FRAMES[fi].label, PERIOD_ORDER.size);
 }
+function spanOf(fi) {
+  const M = FRAMES[fi];
+  if (M.t0 && M.t1) return [dayOf(M.t0), dayOf(M.t1) + DAY];
+  const k = PERIOD_ORDER.get(M.label);
+  return [k, k + 1];
+}
+// Ao trocar de tema ou de escala: o quadro da linha `tl` que mais se sobrepõe no tempo ao atual
+// (empate: o último visitado nessa linha, senão o mais antigo; sem sobreposição: o mais próximo).
+const lastPos = new Map([[0, 0]]);
+function matchingPos(tl) {
+  const [a0, a1] = spanOf(TIMELINES[cur.tl].frames[cur.pos]), prefer = lastPos.get(tl);
+  let best = 0, bestScore = -Infinity;
+  TIMELINES[tl].frames.forEach((fi, i) => {
+    const [b0, b1] = spanOf(fi);
+    const overlap = Math.min(a1, b1) - Math.max(a0, b0);
+    // fração do período mais curto (anos de 365 e 366 dias contam igual); sem sobreposição: -(distância)
+    const score = overlap > 0 ? Math.round(1000 * overlap / Math.min(a1 - a0, b1 - b0)) : overlap - 1;
+    if (score > bestScore || (score === bestScore && i === prefer)) { best = i; bestScore = score; }
+  });
+  return best;
+}
+
+const tlSel = $("tlSelect"), tlRange = $("tlRange");
+const SCALES = C.scales && C.scales.length ? C.scales : [""];
+const scaleOf = (tl) => TIMELINES[tl].scale || 0;
+const linesOf = (s) => TIMELINES.flatMap((t, i) => scaleOf(i) === s ? [i] : []);
+$("tlName").textContent = C.timelineLabel;
+$("tlScaleName").textContent = C.scaleLabel;
+$("tlScale").setAttribute("aria-label", C.scaleLabel);
+$("tlScaleField").hidden = SCALES.length < 2;
+$("tlScale").replaceChildren(...SCALES.map((s, i) =>
+  el("button", { type: "button", textContent: s || "—", onclick: () => switchScale(i) })));
+$("timeline").hidden = !multi;
+let selectScale = -1;  // escala cujas linhas estão no seletor de tema
+function fillLineSelect() {
+  const s = scaleOf(cur.tl);
+  if (s === selectScale) return;
+  selectScale = s;
+  const lines = linesOf(s);
+  tlSel.replaceChildren(...lines.map((i) => el("option", { value: i, textContent: TIMELINES[i].name || "—" })));
+  $("tlField").hidden = lines.length < 2;
+}
+function switchScale(s) {
+  if (s === scaleOf(cur.tl)) return;
+  stopPlay();
+  const lines = linesOf(s), name = TIMELINES[cur.tl].name;
+  const tl = lines.find((i) => TIMELINES[i].name === name) ?? lines[0];
+  go(tl, matchingPos(tl));
+}
 tlSel.onchange = () => {
   stopPlay();
-  const target = PERIOD_ORDER.get(curFrame().label), frames = TIMELINES[+tlSel.value].frames;
-  let best = 0, bestDist = Infinity;
-  frames.forEach((fi, i) => {
-    const dist = Math.abs(PERIOD_ORDER.get(FRAMES[fi].label) - target);
-    if (dist < bestDist) { best = i; bestDist = dist; }  // empate: o período anterior
-  });
-  go(+tlSel.value, best);
+  go(+tlSel.value, matchingPos(+tlSel.value));
 };
 let rangeTimer = 0;
 tlRange.oninput = () => {
@@ -2153,24 +2513,42 @@ $("tlNext").onclick = () => { stopPlay(); go(cur.tl, cur.pos + 1); };
 function updateTimelineUI() {
   if (!multi) return;
   const frames = TIMELINES[cur.tl].frames, n = frames.length;
+  fillLineSelect();
   tlSel.value = String(cur.tl);
+  [...$("tlScale").children].forEach((b, i) => b.setAttribute("aria-pressed", String(i === scaleOf(cur.tl))));
   tlRange.max = String(Math.max(0, n - 1));
   tlRange.value = String(cur.pos);
   tlRange.disabled = n < 2;
   $("tlPrev").disabled = cur.pos <= 0;
   $("tlNext").disabled = cur.pos >= n - 1;
   $("tlPlay").disabled = n < 2;
-  const every = Math.ceil(n / 12);
+  renderTicks();
+  $("tlLabel").textContent = curFrame().label || TIMELINES[cur.tl].name;
+  $("tlMeta").textContent = frameInfo(curFrame());
+}
+// Rótulos sob a barra: de `every` em `every` quadros (contando do último), conforme a largura disponível;
+// o quadro atual sempre aparece, escondendo os vizinhos que ficariam em cima dele.
+function renderTicks() {
+  const frames = TIMELINES[cur.tl].frames, n = frames.length;
+  const width = $("tlTicks").clientWidth || 600;
+  const longest = Math.max(...frames.map((fi) => FRAMES[fi].label.length));
+  const every = Math.max(1, Math.ceil((n - 1) * (longest * 7 + 14) / Math.max(1, width - 16)));
   $("tlTicks").replaceChildren(...frames.map((fi, i) => {
     const b = el("button", { type: "button", className: "tick", textContent: FRAMES[fi].label,
       onclick: () => { stopPlay(); go(cur.tl, i); } });
     b.style.left = n > 1 ? `calc(8px + (100% - 16px) * ${i / (n - 1)})` : "50%";
     b.setAttribute("aria-current", String(i === cur.pos));
-    if (i % every && i !== n - 1 && i !== cur.pos) b.hidden = true;
+    const onGrid = (n - 1 - i) % every === 0;
+    if (i !== cur.pos && (!onGrid || Math.abs(i - cur.pos) < every)) b.hidden = true;
     return b;
   }));
-  $("tlLabel").textContent = curFrame().label || TIMELINES[cur.tl].name;
-  $("tlMeta").textContent = frameInfo(curFrame());
+}
+if (multi && window.ResizeObserver) {
+  let tickWidth = 0;
+  new ResizeObserver(([entry]) => {
+    const w = Math.round(entry.contentRect.width);
+    if (w !== tickWidth) { tickWidth = w; renderTicks(); }
+  }).observe($("tlTicks"));
 }
 
 let playTimer = 0;
@@ -2197,6 +2575,7 @@ document.addEventListener("keydown", (ev) => {
     if (!$("tableView").hidden) toggleTable(false);
     else if (state.selected != null) select(null);
     else if (state.highlight) setHighlight(null);
+    else if (state.vote != null) clearVote();
   } else if (multi && !typing && (ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
     ev.preventDefault(); stopPlay(); go(cur.tl, cur.pos + (ev.key === "ArrowRight" ? 1 : -1));
   }
@@ -2208,7 +2587,7 @@ afterFrame(); // cores, tamanhos, legenda, busca e linha do tempo do primeiro qu
 if (C.layoutSeconds > 0) startLayout(C.layoutSeconds);
 window.__graphViz = {
   graph, sigma, state, select, startLayout, stopLayout, setFa2, fa2Settings, go, cur, TIMELINES, FRAMES,
-  compo, setHighlight, toggleCompo,
+  compo, setHighlight, toggleCompo, selectVote, clearVote, toggleVotes, VOTES, frameVotes, switchScale, matchingPos,
   get layout() { return layout; }, get iterations() { return iterations; }, get drag() { return drag; },
   get highlightSet() { return highlightSet; },
 };
