@@ -167,28 +167,36 @@ def align_labels(frames, attr="community", new_attr="Comunidade", label="Comunid
     ``frames`` é um dict {período: Graph} (ou lista de Graph) em ordem temporal. No primeiro
     quadro os grupos são numerados por tamanho (1 = maior). Nos seguintes, cada grupo herda o
     rótulo do grupo do quadro anterior com que compartilha mais vértices (pelo ``name``), em
-    ordem decrescente de sobreposição; os que sobram recebem números novos. O resultado vai
-    para o atributo ``new_attr`` de cada grafo, para a cor de um grupo se manter entre quadros.
+    ordem decrescente de sobreposição, desde que o número caiba no quadro (um quadro com k grupos
+    usa exatamente 1..k); os que sobram recebem os menores números livres, por tamanho. O
+    resultado vai para o atributo ``new_attr`` de cada grafo, para a cor de um grupo se manter
+    entre quadros.
+    Vértices sem grupo (None/NaN, ex.: deputados sem nenhuma aresta) ficam sem rótulo, e um quadro
+    sem nenhum grupo não interrompe a sequência (o seguinte é comparado ao último com grupos).
     """
     graphs = list(frames.values()) if isinstance(frames, dict) else list(frames)
-    previous, next_label = {}, 1
+    previous = {}
     for g in graphs:
         groups = {}
-        for name, c in zip(g.vs["name"], g.vs[attr]):
-            groups.setdefault(c, set()).add(name)
+        if attr in g.vs.attributes():
+            for name, c in zip(g.vs["name"], g.vs[attr]):
+                if _clean(c) is not None:
+                    groups.setdefault(c, set()).add(name)
         pairs = sorted(((len(members & old), c, k) for c, members in groups.items()
                         for k, old in previous.items() if members & old), key=lambda p: -p[0])
         mapping, used = {}, set()
         for _, c, k in pairs:
-            if c not in mapping and k not in used:
+            if c not in mapping and k not in used and k <= len(groups):
                 mapping[c] = k
                 used.add(k)
+        free = (k for k in range(1, len(groups) + 1) if k not in used)
         for c in sorted(groups, key=lambda c: -len(groups[c])):
             if c not in mapping:
-                mapping[c] = next_label
-                next_label += 1
-        g.vs[new_attr] = [label.format(mapping[c]) for c in g.vs[attr]]
-        previous = {mapping[c]: members for c, members in groups.items()}
+                mapping[c] = next(free)
+        g.vs[new_attr] = [label.format(mapping[c]) if c in mapping else None
+                          for c in (g.vs[attr] if attr in g.vs.attributes() else [None] * g.vcount())]
+        if groups:
+            previous = {mapping[c]: members for c, members in groups.items()}
     return frames
 
 
@@ -497,6 +505,9 @@ def graph_to_html(
     sublabel_attrs=("Partido", "UF"),
     edge_attr: str = "similarity",
     edge_label: str = "Similaridade mínima",
+    edge_flag_attr: str | None = "significativa",
+    edge_flag_label: str = "Só signif.",
+    edge_flag_hint: str = "Mostrar só as arestas significativas (as demais aparecem mais apagadas)",
     photo_attr: str | None = "Foto",
     link_attr: str | None = "Página",
     link_text: str = "Página na Câmara",
@@ -537,6 +548,9 @@ def graph_to_html(
         Atributos numéricos que podem definir o tamanho dos nós. ``"degree"`` é calculado.
     info_attrs : dict {atributo: rótulo}
         Campos exibidos no painel ao clicar em um nó (padrão: cores + tamanhos).
+    edge_flag_attr, edge_flag_label, edge_flag_hint : str
+        Atributo booleano opcional das arestas (ex.: ``significativa``). Se existir, as arestas com
+        valor falso aparecem mais apagadas e um botão (``edge_flag_label``) permite escondê-las.
     edge_attr : str
         Atributo numérico das arestas mostrado na interface e usado no filtro. Arestas
         paralelas (mesmo par de vértices) são unidas mantendo o maior valor.
@@ -628,6 +642,7 @@ def graph_to_html(
 
     # --- Arestas: une paralelas (maior valor), remove laços ---
     frame_edges, lo, hi = [], math.inf, -math.inf
+    has_flags = bool(edge_flag_attr) and any(edge_flag_attr in g.es.attributes() for _, g in frames)
     for (_, g), gi in zip(frames, frame_nodes):
         el = np.asarray(g.get_edgelist(), dtype=np.int64).reshape(-1, 2)
         if edge_attr in g.es.attributes():
@@ -642,7 +657,13 @@ def graph_to_html(
         keys, inv = np.unique(a[ok] * n_nodes + b[ok], return_inverse=True)
         best = np.full(len(keys), -np.inf)
         np.maximum.at(best, inv, vals[ok])
-        frame_edges.append((keys, best))
+        flags = None
+        if has_flags:  # aresta sem o atributo conta como marcada; paralelas: basta uma marcada
+            raw = g.es[edge_flag_attr] if edge_flag_attr in g.es.attributes() else [True] * g.ecount()
+            marked = np.array([bool(_clean(v)) for v in raw], dtype=np.uint8)
+            flags = np.zeros(len(keys), dtype=np.uint8)
+            np.maximum.at(flags, inv, marked[ok])
+        frame_edges.append((keys, best, flags))
         if len(best):
             lo, hi = min(lo, best.min()), max(hi, best.max())
     if not math.isfinite(lo):
@@ -655,8 +676,8 @@ def graph_to_html(
             raise ValueError("`layout` só pode ser usado com um único grafo.")
         coords = [tuple(c[:2]) for c in (layout.coords if hasattr(layout, "coords") else layout)]
     else:
-        keys = np.concatenate([k for k, _ in frame_edges])
-        weights = np.concatenate([(v - lo) / span for _, v in frame_edges])
+        keys = np.concatenate([k for k, _, _ in frame_edges])
+        weights = np.concatenate([(v - lo) / span for _, v, _ in frame_edges])
         keys, inv = np.unique(keys, return_inverse=True)
         best = np.zeros(len(keys))
         np.maximum.at(best, inv, weights)
@@ -688,7 +709,7 @@ def graph_to_html(
 
     codes = {a: {} for a in frame_attrs if kinds[a] == "cat"}
     frames_meta = []
-    for (label, g), gi, (keys, vals) in zip(frames, frame_nodes, frame_edges):
+    for (label, g), gi, (keys, vals, flags) in zip(frames, frame_nodes, frame_edges):
         refs = {}
         for a in frame_attrs:
             column = g.vs[a] if a in g.vs.attributes() else [None] * g.vcount()
@@ -714,6 +735,7 @@ def graph_to_html(
             "s": put(np.diff(s, prepend=0).astype("<u2")),  # origem codificada por diferença
             "t": put(t.astype("<u2")),
             "q": put(np.concatenate([q >> 8, q & 255]).astype("u1")),  # [bytes altos..., bytes baixos...]
+            **({"f": put(flags)} if flags is not None else {}),
         })
     if any(len(c) >= _NONE for c in codes.values()):
         raise ValueError("Atributo categórico com valores distintos demais.")
@@ -772,6 +794,7 @@ def graph_to_html(
             "sublabelAttrs": sublabel_attrs,
             "attrKinds": kinds,
             "edgeLabel": edge_label,
+            "edgeFlag": {"label": edge_flag_label, "hint": edge_flag_hint} if has_flags else None,
             "photoAttr": photo_attr,
             "linkAttr": link_attr,
             "linkText": link_text,
@@ -885,7 +908,7 @@ button, input, select { font: inherit; color: inherit; }
 .field { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12.5px; }
 select, .btn, .search input { height: 32px; border: 1px solid var(--border); border-radius: 8px;
   background: var(--raised); padding: 0 10px; }
-select { padding-right: 6px; max-width: 140px; text-overflow: ellipsis; }
+select { padding-right: 6px; max-width: 120px; text-overflow: ellipsis; }
 .btn { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .btn:hover, select:hover { border-color: var(--axis); }
 .btn:disabled { opacity: .45; cursor: default; }
@@ -893,11 +916,11 @@ select { padding-right: 6px; max-width: 140px; text-overflow: ellipsis; }
 #layoutBtn { min-width: 96px; justify-content: center; }  /* ▶/❚❚ sem mudar a largura da barra */
 .btn:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .range { display: flex; align-items: center; gap: 6px; }
-.range input { width: 96px; accent-color: var(--accent); }
+.range input { width: 80px; accent-color: var(--accent); }
 .range output { min-width: 34px; font-variant-numeric: tabular-nums; color: var(--text); }
 
 .search { position: relative; }
-.search input { width: 170px; }
+.search input { width: 125px; }
 .suggest { position: absolute; z-index: 20; top: 36px; left: 0; right: 0; margin: 0; padding: 4px;
   list-style: none; background: var(--raised); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 8px 24px var(--shadow); max-height: 320px; overflow: auto; }
@@ -1059,6 +1082,7 @@ select { padding-right: 6px; max-width: 140px; text-overflow: ellipsis; }
   border-radius: 6px; background: none; cursor: pointer; text-align: left; }
 .panel ol button:hover { background: var(--grid); }
 .panel ol .nm { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.panel ol li.weak { opacity: .55; }
 .panel ol .v { margin-left: auto; color: var(--text-2); font-variant-numeric: tabular-nums; font-size: 12px; }
 .panel ol small { color: var(--text-2); font-size: 11.5px; }
 
@@ -1081,15 +1105,22 @@ select { padding-right: 6px; max-width: 140px; text-overflow: ellipsis; }
 #tlPrev, #tlNext { width: 32px; padding: 0; justify-content: center; font-size: 18px; }
 .tl-track { flex: 1 1 260px; min-width: 180px; padding: 0 4px; }
 .tl-track input { display: block; width: 100%; margin: 0; accent-color: var(--accent); }
-.ticks { position: relative; height: 20px; }
-.tick { position: absolute; top: 1px; transform: translateX(-50%); background: none; border: 0; padding: 0 3px;
+.ticks { position: relative; height: 22px; }
+.tick { position: absolute; top: 0; transform: translateX(-50%); background: none; border: 0; padding: 5px 3px 0;
   font-size: 11.5px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.tick::before { content: ""; position: absolute; top: 0; left: 50%; width: 1px; height: 4px; background: var(--axis); }
+.tick.nolabel { width: 9px; height: 14px; padding: 0; }
+.tick.nolabel span { display: none; }
 .tick:hover { color: var(--text); }
+.tick:hover::before { background: var(--text); }
 .tick[aria-current="true"] { color: var(--text); font-weight: 650; }
-.tl-info { display: flex; flex-direction: column; min-width: 150px; font-size: 12.5px; line-height: 1.3; padding-bottom: 4px; }
+.tick[aria-current="true"]::before { background: var(--accent); width: 3px; height: 6px; margin-left: -1px; }
+.tl-info { display: flex; flex-direction: column; min-width: 150px; max-width: 420px; font-size: 12.5px; line-height: 1.3; padding-bottom: 4px; }
 .tl-info strong { font-size: 14px; }
 .tl-info span { color: var(--text-2); font-variant-numeric: tabular-nums; }
 
+.empty-msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-2); font-size: 14px;
+  pointer-events: none; z-index: 5; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-2); z-index: 30; background: var(--surface); }
 [hidden] { display: none !important; }
 
@@ -1117,6 +1148,7 @@ select { padding-right: 6px; max-width: 140px; text-overflow: ellipsis; }
       <label class="field range"><span id="edgeLabel"></span>
         <input id="threshold" type="range" min="0" max="1" step="0.001" value="0">
         <output id="thresholdOut"></output></label>
+      <button class="btn" id="flagBtn" type="button" aria-pressed="false" hidden></button>
       <button class="btn" id="layoutBtn" type="button" aria-pressed="false">▶ Layout</button>
       <button class="btn" id="paramsBtn" type="button" aria-pressed="false" aria-controls="params"
               title="Parâmetros do layout (ForceAtlas2)" aria-label="Parâmetros do layout">⚙</button>
@@ -1147,6 +1179,7 @@ select { padding-right: 6px; max-width: 140px; text-overflow: ellipsis; }
     </div>
     <div class="table-view" id="tableView" hidden></div>
     <div class="tooltip" id="tip" hidden role="tooltip"></div>
+    <div class="empty-msg" id="emptyMsg" hidden></div>
     <div class="loading" id="loading">Carregando bibliotecas…</div>
   </div>
   <footer class="timeline" id="timeline" hidden aria-label="Linha do tempo">
@@ -1263,7 +1296,8 @@ function frameData(fi) {
   for (const [attr, ref] of Object.entries(M.a)) attrs[attr] = view(KINDS[attr] === "num" ? Float32Array : Uint16Array, ref);
   const [qo, q2] = M.q;  // valor quantizado: bytes altos e depois bytes baixos
   const F = { nodes: view(Uint16Array, M.n), attrs, sd: view(Uint16Array, M.s), t: view(Uint16Array, M.t),
-              qh: new Uint8Array(BUF, qo, q2 / 2), ql: new Uint8Array(BUF, qo + q2 / 2, q2 / 2) };
+              qh: new Uint8Array(BUF, qo, q2 / 2), ql: new Uint8Array(BUF, qo + q2 / 2, q2 / 2),
+              flag: M.f ? view(Uint8Array, M.f) : null };
   frameCache.set(fi, F);
   return F;
 }
@@ -1310,7 +1344,10 @@ const state = {
   focusNeighbors: new Set(),
   highlight: null, // critério de destaque da composição: {rows, rowKey, segs, segKeys}
   vote: null,      // índice da votação selecionada (cores pelo voto)
+  onlyFlag: false, // só as arestas marcadas (ex.: significativas)
 };
+// Aresta passa nos filtros de valor mínimo e de marca (não olha os nós)
+const edgeShown = (a) => a.value >= state.threshold && (!state.onlyFlag || a.sig);
 const cur = { tl: 0, pos: 0 };
 const curFrame = () => FRAMES[TIMELINES[cur.tl].frames[cur.pos]];
 const multi = TIMELINES.length > 1 || TIMELINES[0].frames.length > 1;
@@ -1368,7 +1405,8 @@ function loadFrame(tl, pos, { home = false } = {}) {
   for (let k = 0; k < F.t.length; k++) {
     s += F.sd[k];
     const w = ((F.qh[k] << 8) | F.ql[k]) / QMAX;
-    graph.addEdge(String(s), String(F.t[k]), { value: VLO + w * VSPAN, weight: 0.05 + 0.95 * w, size: 0.4 + 0.8 * w });
+    graph.addEdge(String(s), String(F.t[k]), { value: VLO + w * VSPAN, weight: 0.05 + 0.95 * w, size: 0.4 + 0.8 * w,
+      sig: F.flag ? F.flag[k] === 1 : true });
   }
   if (home) graph.updateEachNodeAttributes((n, a) => ({ ...a, x: NODES[+n].x, y: NODES[+n].y }), { attributes: ["x", "y"] });
   else placeNear(entering);
@@ -1395,7 +1433,12 @@ function placeNear(keys) {
     if (!placed.length) break;
     for (const [n, x, y] of placed) { graph.mergeNodeAttributes(n, { x, y }); pending.delete(n); }
   }
-  for (const n of pending) graph.mergeNodeAttributes(n, { x: cx / c + jitter(8), y: cy / c + jitter(8) });
+  // Sem vizinho posicionado (ex.: quadro sem arestas): espalhados num disco em volta do centro (filotaxia)
+  const rest = [...pending], R = ext * 0.35, GOLDEN = Math.PI * (3 - Math.sqrt(5));
+  rest.forEach((n, k) => {
+    const r = R * Math.sqrt((k + 0.5) / rest.length), t = k * GOLDEN;
+    graph.mergeNodeAttributes(n, { x: cx / c + r * Math.cos(t), y: cy / c + r * Math.sin(t) });
+  });
 }
 
 function applyColors() {
@@ -1407,9 +1450,10 @@ function applyColors() {
     return { ...a, g, color: attr ? groupColor(g) : T.slots[0] };
   }, { attributes: ["g", "color"] });
   const intraA = T.dark ? 0.22 : 0.18, interA = T.dark ? 0.09 : 0.07;
-  graph.updateEachEdgeAttributes((e, a, s, t, sa, ta) => ({
-    ...a, color: sa.g === ta.g ? rgba(sa.color, intraA) : rgba(T.edge, interA),
-  }), { attributes: ["color"] });
+  graph.updateEachEdgeAttributes((e, a, s, t, sa, ta) => {
+    const f = a.sig ? 1 : 0.3;  // aresta não marcada (ex.: não significativa): mais apagada
+    return { ...a, color: sa.g === ta.g ? rgba(sa.color, intraA * f) : rgba(T.edge, interA * f) };
+  }, { attributes: ["color"] });
 }
 
 function applySizes() {
@@ -1438,7 +1482,7 @@ function computeFocus() {
   if (focus == null) return;
   graph.forEachEdge(focus, (e, a, s, t) => {
     const o = s === focus ? t : s;
-    if (a.value >= state.threshold && nodeVisible(o)) state.focusNeighbors.add(o);
+    if (edgeShown(a) && nodeVisible(o)) state.focusNeighbors.add(o);
   });
 }
 
@@ -1467,7 +1511,7 @@ function nodeReducer(node, data) {
 }
 function edgeReducer(edge, data) {
   const res = { ...data };
-  if (data.value < state.threshold) { res.hidden = true; return res; }
+  if (!edgeShown(data)) { res.hidden = true; return res; }
   const [s, t] = graph.extremities(edge);
   if (!nodeVisible(s) || !nodeVisible(t)) { res.hidden = true; return res; }
   const focus = state.hovered ?? state.selected;
@@ -1638,14 +1682,14 @@ function renderPanel(node) {
   const neigh = [];
   graph.forEachEdge(node, (e, ea, s, t) => {
     const o = s === node ? t : s;
-    if (ea.value >= state.threshold && nodeVisible(o)) neigh.push([o, ea.value]);
+    if (edgeShown(ea) && nodeVisible(o)) neigh.push([o, ea.value, ea.sig]);
   });
   neigh.sort((x, y) => y[1] - x[1]);
   panel.append(el("h3", { textContent: `Mais similares (${nf.format(neigh.length)} ${C.edgeNoun})` }));
   const ol = el("ol");
-  for (const [o, v] of neigh.slice(0, 15)) {
+  for (const [o, v, sig] of neigh.slice(0, 15)) {
     const oa = graph.getNodeAttributes(o);
-    ol.append(el("li", {}, el("button", { type: "button", onclick: () => select(o, { zoom: true }) },
+    ol.append(el("li", sig ? {} : { className: "weak", title: "Aresta não significativa" }, el("button", { type: "button", onclick: () => select(o, { zoom: true }) },
       el("span", { className: "sw", style: `background:${oa.color}` }),
       el("span", { className: "nm" }, el("span", { textContent: oa.label }), el("small", { textContent: oa.sublabel })),
       el("span", { className: "v", textContent: fmt(v) }))));
@@ -1665,6 +1709,13 @@ function renderLegend() {
   graph.forEachNode((n, a) => counts.set(a.g, (counts.get(a.g) || 0) + 1));
   const list = [...counts].map(([key, count]) => ({ key, count, slot: info.slot.get(key) ?? -1 }))
     .sort((a, b) => (info.rank.get(a.key) ?? 1e9) - (info.rank.get(b.key) ?? 1e9));
+  // Rótulos numerados com o mesmo prefixo (ex.: "Comunidade 1, 2, 3"): em ordem numérica
+  const numOf = (k) => /^(.*?)(\d+)$/.exec(k);
+  const nums = list.filter((g) => g.key !== MISSING).map((g) => numOf(g.key));
+  if (nums.length && nums.every((m) => m && m[1] === nums[0][1])) {
+    const order = (g) => (g.key === MISSING ? Infinity : +numOf(g.key)[2]);
+    list.sort((a, b) => order(a) - order(b));
+  }
   box.append(el("h2", { textContent: attrLabel(state.colorAttr) }));
   if (state.colorAttr === VOTE) box.append(el("p", { className: "hint", textContent: voteTitle(state.vote) }));
   box.append(el("p", { className: "hint", textContent: "Clique para mostrar/ocultar" }));
@@ -1701,9 +1752,11 @@ function afterFilter() {
 }
 
 function updateStats() {
+  $("emptyMsg").hidden = graph.order > 0;
+  $("emptyMsg").textContent = `Sem ${C.nodeNoun} neste quadro.`;
   let nv = 0, ev = 0;
   graph.forEachNode((n) => { if (nodeVisible(n)) nv++; });
-  graph.forEachEdge((e, a, s, t) => { if (a.value >= state.threshold && nodeVisible(s) && nodeVisible(t)) ev++; });
+  graph.forEachEdge((e, a, s, t) => { if (edgeShown(a) && nodeVisible(s) && nodeVisible(t)) ev++; });
   const parts = [C.subtitle, TIMELINES[cur.tl].name, curFrame().label,
     `${nf.format(nv)} ${C.nodeNoun}`, `${nf.format(ev)} ${C.edgeNoun}`].filter(Boolean);
   $("subtitle").textContent = parts.join(" · ");
@@ -1735,6 +1788,19 @@ sizeSel.onchange = () => {
   state.sizeAttr = sizeSel.value; applySizes(); refresh();
   restartLayoutIfRunning(); // o worker lê os tamanhos só no início (usado por adjustSizes)
 };
+
+// Botão "Só significativas" (só existe se as arestas tiverem a marca)
+if (C.edgeFlag) {
+  const fb = $("flagBtn");
+  fb.hidden = false;
+  fb.textContent = C.edgeFlag.label;
+  fb.title = C.edgeFlag.hint;
+  fb.onclick = () => {
+    state.onlyFlag = !state.onlyFlag;
+    fb.setAttribute("aria-pressed", String(state.onlyFlag));
+    afterFilter();
+  };
+}
 
 const th = $("threshold");
 if (!FRAMES.some((f) => f.t[1] > 0)) th.closest("label").hidden = true;
@@ -1792,7 +1858,7 @@ let searchIndex = [];
 function rebuildSearch() {
   searchIndex = [];
   graph.forEachNode((n, a) => searchIndex.push({ n, key: norm(a.label), label: a.label, sub: a.sublabel }));
-  $("search").placeholder = `Buscar entre ${nf.format(graph.order)} ${C.nodeNoun}…`;
+  $("search").placeholder = `Buscar ${C.nodeNoun}…`;
 }
 const input = $("search"), sug = $("suggest");
 let matches = [], active = -1;
@@ -2526,20 +2592,20 @@ function updateTimelineUI() {
   $("tlLabel").textContent = curFrame().label || TIMELINES[cur.tl].name;
   $("tlMeta").textContent = frameInfo(curFrame());
 }
-// Rótulos sob a barra: de `every` em `every` quadros (contando do último), conforme a largura disponível;
-// o quadro atual sempre aparece, escondendo os vizinhos que ficariam em cima dele.
+// Marcas sob a barra: uma para cada quadro; rótulo de `every` em `every` quadros a partir do primeiro,
+// conforme a largura disponível (o quadro atual tem a marca destacada e aparece por extenso ao lado).
 function renderTicks() {
   const frames = TIMELINES[cur.tl].frames, n = frames.length;
   const width = $("tlTicks").clientWidth || 600;
   const longest = Math.max(...frames.map((fi) => FRAMES[fi].label.length));
   const every = Math.max(1, Math.ceil((n - 1) * (longest * 7 + 14) / Math.max(1, width - 16)));
   $("tlTicks").replaceChildren(...frames.map((fi, i) => {
-    const b = el("button", { type: "button", className: "tick", textContent: FRAMES[fi].label,
-      onclick: () => { stopPlay(); go(cur.tl, i); } });
+    const label = FRAMES[fi].label;
+    const b = el("button", { type: "button", className: "tick" + (i % every ? " nolabel" : ""), title: label,
+      onclick: () => { stopPlay(); go(cur.tl, i); } }, el("span", { textContent: label }));
+    b.setAttribute("aria-label", label);
     b.style.left = n > 1 ? `calc(8px + (100% - 16px) * ${i / (n - 1)})` : "50%";
     b.setAttribute("aria-current", String(i === cur.pos));
-    const onGrid = (n - 1 - i) % every === 0;
-    if (i !== cur.pos && (!onGrid || Math.abs(i - cur.pos) < every)) b.hidden = true;
     return b;
   }));
 }
